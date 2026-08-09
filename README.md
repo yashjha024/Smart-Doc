@@ -1,22 +1,18 @@
 # DocRename
 
-Local-first document management for smart document renaming and PDF compression.
+Local-first document management system for smart AI document renaming, OCR extraction, and PDF compression.
 
-## Phase 1: Project Foundation
+## Key Features
 
-This phase adds the application skeleton only:
+- **Local-First & Privacy Focused**: All OCR extraction, identifier detection, and document renaming happen locally without cloud uploads.
+- **Smart Document Renaming**: Automated identifier detection (dates, invoice numbers, amounts, vendors) with a Human-in-the-Loop review UI.
+- **Bulk Rename & History**: Batch process multiple documents with custom naming templates and complete undo/history tracking.
+- **PDF Compression**: Built-in compression presets and target-size PDF optimization.
+- **Dark Workspace UI**: High-contrast, productive UI designed for maximum legibility and efficiency.
 
-- FastAPI backend structure
-- React + TypeScript frontend structure
-- SQLite configuration
-- Local storage directories
-- Health endpoints and startup wiring
+## Quick Start
 
-Feature implementation will be added phase by phase after confirmation.
-
-## Local Development
-
-### Backend
+### Backend (FastAPI)
 
 ```powershell
 cd backend
@@ -26,7 +22,7 @@ pip install -r requirements.txt
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-### Frontend
+### Frontend (React + Vite + TypeScript)
 
 ```powershell
 cd frontend
@@ -34,17 +30,17 @@ npm install
 npm run dev
 ```
 
-The frontend expects the backend at `http://127.0.0.1:8000`. `http://127.0.0.1:5173/`
+* **Frontend**: `http://127.0.0.1:5173/`
+* **Backend API**: `http://127.0.0.1:8000`
 
+## Architecture & Roadmap
 
-## Planned Phases
-
-1. Project foundation
-2. File upload and document records
+1. Project foundation & local workspace
+2. File upload and document record management
 3. OCR extraction pipeline
 4. Identifier detection and review UI
 5. Naming templates, duplicate prevention, and bulk rename
-6. Rename history and undo
-7. PDF compression presets
-8. Target-size PDF compression
-9. Production hardening and packaging
+6. Rename history and undo capabilities
+7. PDF compression presets & target-size optimization
+8. Production hardening & packaging
+

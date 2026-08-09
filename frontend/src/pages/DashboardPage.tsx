@@ -1,13 +1,15 @@
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, FilePlus, ChevronRight, CheckCircle2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
 import { StatCard } from "../components/StatCard";
 import { StatusMessage } from "../components/StatusMessage";
 import { api } from "../services/api";
+import { useHashRoute } from "../hooks/useHashRoute";
 import type { DocumentRecord } from "../types/api";
 import { formatBytes, formatDateTime } from "../utils/format";
 
 export function DashboardPage() {
+  const { navigate } = useHashRoute();
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,68 +34,103 @@ export function DashboardPage() {
     () => documents.reduce((total, document) => total + document.file_size_bytes, 0),
     [documents],
   );
-  const renamedCount = documents.filter((document) => document.status.includes("rename")).length;
-  const ocrCount = documents.filter((document) => document.status === "ocr_complete").length;
+  const requiresAction = documents.filter((d) => d.status !== "renamed");
+  const recentRenames = documents.filter((d) => d.status === "renamed");
 
   return (
     <>
       <PageHeader
-        eyebrow="Overview"
-        title="Dashboard"
-        description="Track the local document queue, OCR progress, and storage footprint."
+        eyebrow="COMMAND CENTER"
+        title="Workspace Overview"
+        description="Monitor your local document processing queue and take action."
         actions={
-          <button className="button secondary" type="button" onClick={loadDocuments}>
-            <RefreshCw aria-hidden="true" size={16} />
-            Refresh
-          </button>
+          <>
+            <button className="button secondary" type="button" onClick={loadDocuments}>
+              <RefreshCw aria-hidden="true" size={16} />
+              Refresh
+            </button>
+            <button className="button primary" type="button" onClick={() => navigate("renamer")}>
+              <FilePlus aria-hidden="true" size={16} />
+              Process Document
+            </button>
+          </>
         }
       />
 
       {error ? <StatusMessage kind="error">{error}</StatusMessage> : null}
 
       <section className="stats-grid">
-        <StatCard label="Documents" value={isLoading ? "..." : documents.length} hint="Uploaded locally" />
-        <StatCard label="Storage" value={formatBytes(totalBytes)} hint="Source file size" />
-        <StatCard label="OCR Complete" value={ocrCount} hint="Ready for identifier review" />
-        <StatCard label="Renamed" value={renamedCount} hint="History available after rename" />
+        <StatCard label="Total Documents" value={isLoading ? "..." : documents.length} hint="Stored locally" />
+        <StatCard label="Awaiting Action" value={requiresAction.length} hint="Needs OCR or Review" />
+        <StatCard label="Processed" value={recentRenames.length} hint="Successfully renamed" />
+        <StatCard label="Storage Footprint" value={formatBytes(totalBytes)} hint="Source files" />
       </section>
 
-      <section className="panel">
-        <div className="section-heading">
-          <h2>Recent Documents</h2>
-          <span>{isLoading ? "Loading" : `${documents.length} total`}</span>
-        </div>
+      <div className="two-column">
+        {/* ACTION QUEUE */}
+        <section className="panel">
+          <div className="section-heading compact">
+            <h2>Requires Attention</h2>
+            <span className="badge warning">{requiresAction.length} pending</span>
+          </div>
+          
+          <div className="bulk-document-grid" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {isLoading && <div className="skeleton skeleton-card" style={{ height: '80px' }} />}
+            {!isLoading && requiresAction.length === 0 ? (
+              <div className="empty-state">All caught up! No documents waiting for processing.</div>
+            ) : (
+              requiresAction.slice(0, 5).map(doc => (
+                <div key={doc.id} className="identifier" style={{ background: 'var(--color-bg)' }}>
+                  <div className="file-summary">
+                    <strong>{doc.original_filename}</strong>
+                    <span>{formatDateTime(doc.created_at)} &middot; {formatBytes(doc.file_size_bytes)}</span>
+                  </div>
+                  <button className="button secondary" onClick={() => navigate("renamer", doc.id)} style={{ height: '36px', fontSize: '0.8rem' }}>
+                    Process
+                  </button>
+                </div>
+              ))
+            )}
+            {!isLoading && requiresAction.length > 5 && (
+              <button className="button secondary full" onClick={() => navigate("bulk-renamer")}>
+                View all pending in Bulk Operations
+              </button>
+            )}
+          </div>
+        </section>
 
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Original</th>
-                <th>Stored filename</th>
-                <th>Status</th>
-                <th>Size</th>
-                <th>Added</th>
-              </tr>
-            </thead>
-            <tbody>
-              {documents.map((document) => (
-                <tr key={document.id}>
-                  <td>{document.original_filename}</td>
-                  <td>{document.stored_filename}</td>
-                  <td>
-                    <span className="badge">{document.status}</span>
-                  </td>
-                  <td>{formatBytes(document.file_size_bytes)}</td>
-                  <td>{formatDateTime(document.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {!isLoading && documents.length === 0 ? (
-            <div className="empty-state">No documents have been uploaded yet.</div>
-          ) : null}
-        </div>
-      </section>
+        {/* ACTIVITY LOG */}
+        <section className="panel">
+          <div className="section-heading compact">
+            <h2>Recently Processed</h2>
+            <span className="badge success">{recentRenames.length} complete</span>
+          </div>
+
+          <div className="timeline">
+            {isLoading && (
+              <>
+                <div className="timeline-item"><div className="skeleton skeleton-text" /></div>
+                <div className="timeline-item"><div className="skeleton skeleton-text" /></div>
+              </>
+            )}
+            {!isLoading && recentRenames.length === 0 ? (
+              <div className="empty-state">No files have been renamed yet.</div>
+            ) : (
+              recentRenames.slice(0, 5).map(doc => (
+                <div key={doc.id} className="timeline-item">
+                  <div className="timeline-header">
+                    <strong>Renamed document</strong>
+                    <span>{formatDateTime(doc.created_at)}</span>
+                  </div>
+                  <div className="timeline-body">
+                    {doc.stored_filename}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      </div>
     </>
   );
 }

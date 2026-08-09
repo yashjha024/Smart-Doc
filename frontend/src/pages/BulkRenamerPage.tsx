@@ -168,207 +168,203 @@ export function BulkRenamerPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Batch operations"
+        eyebrow="BATCH OPERATIONS"
         title="Bulk Rename & Export"
         description="Select multiple documents, detect identifiers from each file with OCR, and apply the same naming template."
       />
 
       {message ? <StatusMessage kind={message.kind}>{message.text}</StatusMessage> : null}
 
-      <section className="panel">
-        <div className="section-heading">
-          <h2>Bulk Upload</h2>
-        </div>
-        <FileDropzone
-          accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-          disabled={isBusy}
-          helper="PDF, JPG, JPEG, or PNG - drag multiple files"
-          label="Upload documents"
-          onFileSelected={bulkUpload}
-          multiple={true}
-        />
-      </section>
+      <div className="workspace-grid">
+        {/* LEFT COLUMN: Configuration */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+          <section className="panel" style={{ padding: '24px', marginBottom: '0' }}>
+            <div className="section-heading compact">
+              <h2>Bulk Upload</h2>
+            </div>
+            <FileDropzone
+              accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+              disabled={isBusy}
+              helper="Drag multiple files"
+              label="Upload documents"
+              onFileSelected={bulkUpload}
+              multiple={true}
+            />
+          </section>
 
-      <section className="panel">
-        <div className="section-heading">
-          <h2>Document Selection</h2>
-          <span>
-            {selectedIds.size} of {documents.length} selected
-          </span>
-        </div>
+          <section className="panel" style={{ padding: '24px', marginBottom: '0' }}>
+            <div className="section-heading compact">
+              <h2>Batch Settings</h2>
+            </div>
 
-        <div className="button-row" style={{ marginBottom: "16px" }}>
-          <button className="button secondary" type="button" onClick={toggleAll} disabled={isBusy || documents.length === 0}>
-            {selectedIds.size === documents.length ? "Deselect All" : "Select All"}
-          </button>
-        </div>
+            <p className="helper-text">
+              Each selected file is processed with OCR. Placeholders like <code>{"{account_number}"}</code> are filled from detected identifiers.
+            </p>
 
-        <div className="bulk-document-grid">
-          {documents.map((doc) => {
-            const isSelected = selectedIds.has(doc.id);
-            const wasRenamed = doc.stored_filename !== doc.original_filename || doc.status.includes("rename");
+            <div className="form-grid" style={{ gridTemplateColumns: '1fr', gap: '12px', marginBottom: '24px' }}>
+              <label>
+                Template
+                <input
+                  value={template}
+                  placeholder="{account_number}"
+                  onChange={(event) => setTemplate(event.target.value)}
+                  disabled={isBusy}
+                />
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <label>
+                  Prefix
+                  <input
+                    value={prefix}
+                    placeholder="Cert1_"
+                    onChange={(event) => setPrefix(event.target.value)}
+                    disabled={isBusy}
+                  />
+                </label>
+                <label>
+                  Suffix
+                  <input
+                    value={suffix}
+                    placeholder="_2015"
+                    onChange={(event) => setSuffix(event.target.value)}
+                    disabled={isBusy}
+                  />
+                </label>
+              </div>
+            </div>
 
-            return (
+            <div className="preview-box compact" style={{ padding: '16px' }}>
+              <span>Example output</span>
+              <strong style={{ fontSize: '1.2rem', marginTop: '4px' }}>
+                {prefix}
+                {template || "{account_number}"}
+                {suffix}
+                .pdf
+              </strong>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <button
-                key={doc.id}
-                className={isSelected ? "bulk-document-card selected" : "bulk-document-card"}
+                className="button primary full"
+                style={{ marginTop: '0' }}
+                disabled={isBusy || selectedIds.size === 0}
                 type="button"
-                disabled={isBusy}
-                onClick={() => toggleDocument(doc.id)}
+                onClick={bulkRename}
               >
-                <div className="bulk-document-card-header">
-                  <strong>{doc.original_filename}</strong>
-                  <span className={statusClass(doc.status)}>{doc.status}</span>
-                </div>
-                {wasRenamed ? (
-                  <div className="bulk-document-meta">
-                    <span>Renamed to</span>
-                    <code>{doc.stored_filename}</code>
-                  </div>
-                ) : null}
-                <div className="bulk-document-meta">
-                  <span>{formatBytes(doc.file_size_bytes)}</span>
-                </div>
+                {isBusy ? <Loader2 aria-hidden="true" className="spin" size={16} /> : <Wand2 aria-hidden="true" size={16} />}
+                {isBusy ? "Processing Queue..." : "Bulk Rename Selected"}
               </button>
-            );
-          })}
+              <button
+                className="button secondary full"
+                style={{ marginTop: '0' }}
+                disabled={isBusy || selectedIds.size === 0}
+                type="button"
+                onClick={bulkExport}
+              >
+                <Download aria-hidden="true" size={16} />
+                Bulk Export Selected
+              </button>
+            </div>
+          </section>
         </div>
 
-        {documents.length === 0 ? (
-          <div className="empty-state">No documents found. Upload some documents first.</div>
-        ) : null}
-      </section>
+        {/* RIGHT COLUMN: Batch Queue & Results */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+          
+          <section className="panel" style={{ padding: '24px', marginBottom: '0' }}>
+            <div className="section-heading compact" style={{ marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <h2 style={{ margin: 0 }}>Batch Queue</h2>
+                <span className="badge neutral">{selectedIds.size} selected</span>
+              </div>
+              <button className="button secondary" style={{ height: '32px', fontSize: '0.8rem', padding: '0 12px' }} type="button" onClick={toggleAll} disabled={isBusy || documents.length === 0}>
+                {selectedIds.size === documents.length ? "Deselect All" : "Select All"}
+              </button>
+            </div>
 
-      <section className="panel">
-        <div className="section-heading">
-          <h2>Bulk Rename Settings</h2>
-        </div>
+            <div className="bulk-document-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px' }}>
+              {documents.map((doc) => {
+                const isSelected = selectedIds.has(doc.id);
+                const wasRenamed = doc.stored_filename !== doc.original_filename || doc.status.includes("rename");
 
-        <p className="helper-text">
-          Each selected file is processed with OCR. Placeholders like <code>{"{account_number}"}</code> are filled from
-          detected identifiers before renaming.
-        </p>
+                return (
+                  <button
+                    key={doc.id}
+                    className={isSelected ? "bulk-document-card selected" : "bulk-document-card"}
+                    style={{ padding: '16px' }}
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => toggleDocument(doc.id)}
+                  >
+                    <div className="bulk-document-card-header">
+                      <strong style={{ fontSize: '0.9rem' }}>{doc.original_filename}</strong>
+                    </div>
+                    {wasRenamed ? (
+                      <div className="bulk-document-meta" style={{ marginTop: '8px' }}>
+                        <span>Renamed to</span>
+                        <code style={{ fontSize: '0.75rem' }}>{doc.stored_filename}</code>
+                      </div>
+                    ) : null}
+                    <div className="bulk-document-meta" style={{ marginTop: 'auto', paddingTop: '8px', borderTop: '1px solid var(--color-border)' }}>
+                      <span className={statusClass(doc.status)}>{doc.status.replace("_", " ")}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
 
-        <div className="form-grid">
-          <label>
-            Prefix
-            <input
-              value={prefix}
-              placeholder="Cert1_"
-              onChange={(event) => setPrefix(event.target.value)}
-              disabled={isBusy}
-            />
-          </label>
-          <label>
-            Template
-            <input
-              value={template}
-              placeholder="{account_number}"
-              onChange={(event) => setTemplate(event.target.value)}
-              disabled={isBusy}
-            />
-          </label>
-          <label>
-            Suffix
-            <input
-              value={suffix}
-              placeholder="_2015"
-              onChange={(event) => setSuffix(event.target.value)}
-              disabled={isBusy}
-            />
-          </label>
-        </div>
+            {documents.length === 0 ? (
+              <div className="empty-state">No documents in queue. Upload some documents first.</div>
+            ) : null}
+          </section>
 
-        <div className="preview-box compact">
-          <span>Example output</span>
-          <strong>
-            {prefix}
-            {template || "{account_number}"}
-            {suffix}
-            .pdf
-          </strong>
-        </div>
+          {renameResults ? (
+            <section className="panel" style={{ padding: '24px', marginBottom: '0' }}>
+              <div className="section-heading compact">
+                <h2>Batch Results</h2>
+                <span>
+                  {renameResults.filter((item) => item.status === "success").length} succeeded
+                </span>
+              </div>
 
-        <div className="button-row">
-          <button
-            className="button primary"
-            disabled={isBusy || selectedIds.size === 0}
-            type="button"
-            onClick={bulkRename}
-          >
-            {isBusy ? <Loader2 aria-hidden="true" className="spin" size={16} /> : <Wand2 aria-hidden="true" size={16} />}
-            {isBusy ? "Renaming..." : "Bulk Rename"}
-          </button>
-          <button
-            className="button secondary"
-            disabled={isBusy || selectedIds.size === 0}
-            type="button"
-            onClick={bulkExport}
-          >
-            <Download aria-hidden="true" size={16} />
-            Bulk Export
-          </button>
-        </div>
-      </section>
-
-      {renameResults ? (
-        <section className="panel">
-          <div className="section-heading">
-            <h2>Rename Results</h2>
-            <span>
-              {renameResults.filter((item) => item.status === "success").length} succeeded,{" "}
-              {renameResults.filter((item) => item.status !== "success").length} failed
-            </span>
-          </div>
-
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Status</th>
-                  <th>Original</th>
-                  <th>New filename</th>
-                  <th>Detected values</th>
-                  <th>Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                {renameResults.map((item) => {
-                  const document = documentById.get(item.document_id);
-                  const originalName = item.original_filename ?? document?.original_filename ?? `Document #${item.document_id}`;
-                  const detectedSummary = item.detected_values
-                    ? Object.entries(item.detected_values)
-                        .map(([key, value]) => `${key}: ${value}`)
-                        .join(", ")
-                    : "—";
-
-                  return (
-                    <tr key={item.document_id}>
-                      <td>
-                        {item.status === "success" ? (
-                          <span className="result-pill success">
-                            <CheckCircle2 aria-hidden="true" size={14} />
-                            Success
-                          </span>
-                        ) : (
-                          <span className="result-pill error">
-                            <XCircle aria-hidden="true" size={14} />
-                            Failed
-                          </span>
-                        )}
-                      </td>
-                      <td>{originalName}</td>
-                      <td>{item.filename ?? "—"}</td>
-                      <td>{detectedSummary}</td>
-                      <td>{item.error ?? item.message ?? "—"}</td>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Status</th>
+                      <th>Original</th>
+                      <th>New filename</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      ) : null}
+                  </thead>
+                  <tbody>
+                    {renameResults.map((item) => {
+                      const document = documentById.get(item.document_id);
+                      const originalName = item.original_filename ?? document?.original_filename ?? `Doc #${item.document_id}`;
+                      return (
+                        <tr key={item.document_id}>
+                          <td>
+                            {item.status === "success" ? (
+                              <span className="result-pill success">
+                                <CheckCircle2 aria-hidden="true" size={14} />
+                              </span>
+                            ) : (
+                              <span className="result-pill error">
+                                <XCircle aria-hidden="true" size={14} />
+                              </span>
+                            )}
+                          </td>
+                          <td className="truncate-cell">{originalName}</td>
+                          <td className="truncate-cell">{item.filename ?? "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+        </div>
+      </div>
     </>
   );
 }

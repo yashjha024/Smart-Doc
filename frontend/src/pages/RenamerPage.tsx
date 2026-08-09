@@ -1,5 +1,6 @@
-import { Download, ScanText, Save, Wand2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Download, ScanText, Save, Wand2, ChevronRight, FilePlus, RefreshCw, CheckCircle2 } from "lucide-react";
+import { useHashRoute } from "../hooks/useHashRoute";
+import { useEffect, useMemo, useState } from "react";
 import { FileDropzone } from "../components/FileDropzone";
 import { PageHeader } from "../components/PageHeader";
 import { StatusMessage } from "../components/StatusMessage";
@@ -10,6 +11,7 @@ import { percentage } from "../utils/format";
 const defaultTemplate = "{account_number}";
 
 export function RenamerPage() {
+  const { docId } = useHashRoute();
   const [document, setDocument] = useState<DocumentRecord | null>(null);
   const [ocrResult, setOcrResult] = useState<OcrResult | null>(null);
   const [identifiers, setIdentifiers] = useState<IdentifierDetectionResult[]>([]);
@@ -21,6 +23,36 @@ export function RenamerPage() {
   const [isBusy, setIsBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: "info" | "success" | "error"; text: string } | null>(null);
 
+  useEffect(() => {
+    if (!docId) return;
+
+    const loadDocument = async () => {
+      setIsBusy(true);
+      setMessage({ kind: "info", text: `Loading document #${docId} and extracting text...` });
+      try {
+        const docs = await api.listDocuments();
+        const found = docs.find((d) => d.id === docId);
+        if (!found) {
+          setMessage({ kind: "error", text: `Document #${docId} not found.` });
+          return;
+        }
+        setDocument(found);
+        const ocr = await api.extractOcr(found.id);
+        const detection = await api.detectIdentifiers(ocr.extracted_text);
+        setOcrResult(ocr);
+        setIdentifiers(detection.identifiers);
+        setSelectedLabel(detection.identifiers[0]?.label ?? "");
+        setMessage({ kind: "success", text: "Text extracted and identifiers detected for target document." });
+      } catch (err) {
+        setMessage({ kind: "error", text: err instanceof Error ? err.message : "Unable to process document." });
+      } finally {
+        setIsBusy(false);
+      }
+    };
+
+    void loadDocument();
+  }, [docId]);
+
   const templateValues = useMemo(() => {
     const values: Record<string, string> = {};
     for (const identifier of identifiers) {
@@ -31,7 +63,8 @@ export function RenamerPage() {
 
   const selectedIdentifier = identifiers.find((identifier) => identifier.label === selectedLabel);
 
-  const uploadAndExtract = async (file: File) => {
+  const uploadAndExtract = async (fileInput: File | File[]) => {
+    const file = Array.isArray(fileInput) ? fileInput[0] : fileInput;
     setIsBusy(true);
     setMessage({ kind: "info", text: "Uploading document and extracting text..." });
     setDocument(null);
@@ -113,7 +146,7 @@ export function RenamerPage() {
       if (exportLocation === "download") {
         // Download directly
         const url = api.downloadDocument(document.id);
-        const link = document.createElement("a");
+        const link = window.document.createElement("a");
         link.href = url;
         link.download = document.stored_filename;
         link.click();
@@ -138,19 +171,21 @@ export function RenamerPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Smart file renamer"
-        title="Renamer"
-        description="Upload a PDF or image, extract OCR text, choose an identifier, and apply a safe filename template."
+        eyebrow="SMART FILE RENAMER"
+        title="Renamer Workspace"
+        description="Extract text from an image or PDF and apply smart renaming rules."
       />
 
       {message ? <StatusMessage kind={message.kind}>{message.text}</StatusMessage> : null}
 
-      <div className="two-column">
-        <section className="panel">
-          <div className="section-heading">
-            <h2>Document</h2>
-            <span>{document ? document.original_filename : "No file selected"}</span>
+      <div className="split-pane">
+        {/* LEFT PANE: Source & OCR */}
+        <div className="split-pane-left">
+          <div className="section-heading compact">
+            <h2>Source Document</h2>
+            <span>{document ? "Uploaded" : "No file selected"}</span>
           </div>
+          
           <FileDropzone
             accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
             disabled={isBusy}
@@ -158,6 +193,13 @@ export function RenamerPage() {
             label="Upload document"
             onFileSelected={uploadAndExtract}
           />
+
+          {document ? (
+            <div className="file-summary">
+              <strong>{document.original_filename}</strong>
+              <span>{document.stored_filename}</span>
+            </div>
+          ) : null}
 
           {ocrResult ? (
             <div className="ocr-preview">
@@ -167,89 +209,139 @@ export function RenamerPage() {
               </div>
               <pre>{ocrResult.extracted_text.slice(0, 1500)}</pre>
             </div>
+          ) : isBusy && document ? (
+            <div className="ocr-preview">
+              <div className="section-heading compact">
+                <h3>Extracting Text</h3>
+              </div>
+              <div className="skeleton skeleton-card" style={{ height: '200px' }} />
+            </div>
           ) : null}
-        </section>
+        </div>
 
-        <section className="panel">
-          <div className="section-heading">
-            <h2>Detected Identifiers</h2>
-            <span>{identifiers.length} candidates</span>
+        {/* RIGHT PANE: Action & Configuration */}
+        <div className="split-pane-right" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+          <div>
+            <div className="section-heading compact">
+              <h2>Detected Identifiers</h2>
+              <span>{identifiers.length} candidates</span>
+            </div>
+            
+            {identifiers.length > 0 ? (
+              <div className="identifier-list">
+                {identifiers.map((item) => {
+                  const tag = `{${item.label}}`;
+                  const isActive = template.includes(tag);
+                  return (
+                    <button
+                      key={item.label}
+                      className={isActive ? "identifier active" : "identifier"}
+                      type="button"
+                      onClick={() => useIdentifierTemplate(item)}
+                    >
+                      <div>
+                        <strong>{item.label}</strong>
+                        <span style={{display: 'block', fontSize: '0.8rem', marginTop: '4px'}}>{item.value}</span>
+                      </div>
+                      <small>{Math.round(item.confidence * 100)}% conf</small>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : isBusy && document ? (
+              <div className="identifier-list">
+                <div className="skeleton skeleton-card" style={{ height: '70px' }} />
+                <div className="skeleton skeleton-card" style={{ height: '70px' }} />
+              </div>
+            ) : (
+              <div className="empty-state" style={{ padding: '32px 16px', background: 'var(--color-bg)', borderRadius: 'var(--radius-md)' }}>
+                Detected values will appear here after upload.
+              </div>
+            )}
           </div>
-          <div className="identifier-list">
-            {identifiers.map((identifier) => (
+
+          <div>
+            <div className="section-heading compact">
+              <h2>Naming Template</h2>
+              <span className="badge neutral">Custom</span>
+            </div>
+            
+            <div className="form-grid" style={{ gridTemplateColumns: '1fr', gap: '16px', marginBottom: '16px' }}>
+              <label>
+                Template
+                <input
+                  value={template}
+                  placeholder="{account_number}"
+                  onChange={(event) => setTemplate(event.target.value)}
+                  disabled={isBusy}
+                />
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <label>
+                  Prefix
+                  <input
+                    value={prefix}
+                    placeholder="BANK_"
+                    onChange={(event) => setPrefix(event.target.value)}
+                    disabled={isBusy}
+                  />
+                </label>
+                <label>
+                  Suffix
+                  <input
+                    value={suffix}
+                    placeholder="_2026"
+                    onChange={(event) => setSuffix(event.target.value)}
+                    disabled={isBusy}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className={`preview-box ${document?.status === 'renamed' ? 'prominent' : 'compact'}`} style={{ marginTop: '24px', marginBottom: '24px' }}>
+              <span>{document?.status === 'renamed' ? "Final filename" : "Live preview"}</span>
+              <strong>
+                {preview ? preview.filename : `${prefix}${template || "filename"}${suffix}${document ? `.${document.original_filename.split('.').pop()}` : ".pdf"}`}
+              </strong>
+            </div>
+
+            <div className="button-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               <button
-                key={`${identifier.label}-${identifier.value}`}
-                className={selectedLabel === identifier.label ? "identifier active" : "identifier"}
+                className="button secondary"
+                disabled={isBusy || !document || !template}
                 type="button"
-                onClick={() => useIdentifierTemplate(identifier)}
+                onClick={previewRename}
               >
-                <span>
-                  <strong>{identifier.display_label}</strong>
-                  <small>{identifier.value}</small>
-                </span>
-                <em>{percentage(identifier.confidence)}</em>
+                <RefreshCw aria-hidden="true" size={16} className={isBusy ? "spin" : ""} />
+                Test Preview
               </button>
-            ))}
-            {identifiers.length === 0 ? <div className="empty-state">Detected values will appear here.</div> : null}
+              <button
+                className="button primary"
+                disabled={isBusy || !document || !template}
+                type="button"
+                onClick={renameDocument}
+              >
+                <Wand2 aria-hidden="true" size={16} />
+                Rename File
+              </button>
+            </div>
+
+            {document?.status === "renamed" ? (
+              <div className="button-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
+                <button className="button secondary" disabled={isBusy} type="button" onClick={() => exportDocument("default")}>
+                  <Save aria-hidden="true" size={16} />
+                  Save to Default
+                </button>
+                <button className="button secondary" disabled={isBusy} type="button" onClick={() => exportDocument("download")}>
+                  <Download aria-hidden="true" size={16} />
+                  Download File
+                </button>
+              </div>
+            ) : null}
+
           </div>
-        </section>
+        </div>
       </div>
-
-      <section className="panel">
-        <div className="section-heading">
-          <h2>Naming Template</h2>
-          <span>{selectedIdentifier ? selectedIdentifier.display_label : "Custom"}</span>
-        </div>
-
-        <div className="form-grid">
-          <label>
-            Prefix
-            <input value={prefix} placeholder="BANK_" onChange={(event) => setPrefix(event.target.value)} />
-          </label>
-          <label>
-            Template
-            <input value={template} placeholder="{account_number}" onChange={(event) => setTemplate(event.target.value)} />
-          </label>
-          <label>
-            Suffix
-            <input value={suffix} placeholder="_2026" onChange={(event) => setSuffix(event.target.value)} />
-          </label>
-        </div>
-
-        <div className="button-row">
-          <button className="button secondary" disabled={!document || isBusy} type="button" onClick={previewRename}>
-            <ScanText aria-hidden="true" size={16} />
-            Preview
-          </button>
-          <button className="button primary" disabled={!document || isBusy} type="button" onClick={renameDocument}>
-            <Wand2 aria-hidden="true" size={16} />
-            Rename
-          </button>
-        </div>
-
-        {document?.status === "renamed" ? (
-          <div className="button-row">
-            <button className="button secondary" disabled={isBusy} type="button" onClick={() => exportDocument("default")}>
-              <Save aria-hidden="true" size={16} />
-              Save to Default
-            </button>
-            <button className="button secondary" disabled={isBusy} type="button" onClick={() => exportDocument("download")}>
-              <Download aria-hidden="true" size={16} />
-              Download File
-            </button>
-          </div>
-        ) : null}
-
-        {preview ? (
-          <div className="preview-box">
-            <span>Preview filename</span>
-            <strong>{preview.filename}</strong>
-            {preview.warnings.map((warning) => (
-              <small key={warning}>{warning}</small>
-            ))}
-          </div>
-        ) : null}
-      </section>
     </>
   );
 }
