@@ -105,3 +105,14 @@ export type BulkExportResult = {
   export_path: string;
   message: string;
 };
+
+export type ConvertRequest = {
+  document_id: number;
+  target_format: string;
+};
+
+export type ConvertResult = {
+  document_id: number;
+  output_filename: string;
+  message: string;
+};

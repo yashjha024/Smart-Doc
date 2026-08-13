@@ -69,7 +69,7 @@ export function CompressorPage() {
       <PageHeader
         eyebrow="PDF COMPRESSOR"
         title="Compression Visualizer"
-        description="Compress PDFs locally and see the impact in real-time."
+        description="Compress PDFs securely and see the impact in real-time."
       />
 
       {message ? <StatusMessage kind={message.kind}>{message.text}</StatusMessage> : null}
@@ -177,6 +177,28 @@ export function CompressorPage() {
                   <span className="badge neutral">Ratio: {result.compression_ratio}</span>
                 </div>
               </div>
+
+              <a 
+                href={api.downloadOutputFile(result.output_filename)}
+                className="button primary full"
+                style={{ textAlign: 'center', display: 'flex', justifyContent: 'center', marginTop: '16px' }}
+                download
+              >
+                Download File
+              </a>
+
+              <button 
+                className="button secondary full" 
+                style={{ marginTop: '12px' }}
+                type="button" 
+                onClick={() => {
+                  setDocument(null);
+                  setResult(null);
+                  setMessage(null);
+                }}
+              >
+                Compress another
+              </button>
             </>
           ) : (
             isBusy && document ? (

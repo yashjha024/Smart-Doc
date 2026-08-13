@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AppRoute } from "../types/navigation";
 
-const routes = new Set<AppRoute>(["dashboard", "renamer", "compressor", "history", "bulk-renamer"]);
+const routes = new Set<AppRoute>(["workspace", "convert", "renamer", "compressor", "history", "bulk-renamer"]);
 
 function readRoute(): { route: AppRoute; docId?: number } {
   const hash = window.location.hash.replace(/^#\/?/, "");
   const [candidate, queryString] = hash.split("?");
   const params = new URLSearchParams(queryString);
   const docId = params.get("id") ? Number(params.get("id")) : undefined;
-  const route = routes.has(candidate as AppRoute) ? (candidate as AppRoute) : "dashboard";
+  const route = routes.has(candidate as AppRoute) ? (candidate as AppRoute) : "workspace";
   return { route, docId };
 }
 

@@ -4,13 +4,15 @@ import { AppLayout } from "./components/AppLayout";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { BulkRenamerPage } from "./pages/BulkRenamerPage";
 import { CompressorPage } from "./pages/CompressorPage";
-import { DashboardPage } from "./pages/DashboardPage";
+import { ConvertPage } from "./pages/ConvertPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { RenamerPage } from "./pages/RenamerPage";
+import { WorkspacePage } from "./pages/WorkspacePage";
 import type { AppRoute } from "./types/navigation";
 
 const pageByRoute: Record<AppRoute, ComponentType> = {
-  dashboard: DashboardPage,
+  workspace: WorkspacePage,
+  convert: ConvertPage,
   renamer: RenamerPage,
   compressor: CompressorPage,
   history: HistoryPage,

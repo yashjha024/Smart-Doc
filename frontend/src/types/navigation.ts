@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 
-export type AppRoute = "dashboard" | "renamer" | "compressor" | "history" | "bulk-renamer";
+export type AppRoute = "workspace" | "convert" | "compressor" | "renamer" | "bulk-renamer" | "history";
 
 export type NavigationItem = {
   route: AppRoute;

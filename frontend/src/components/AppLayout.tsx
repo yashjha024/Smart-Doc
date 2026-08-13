@@ -3,10 +3,11 @@ import { type ReactNode, useEffect, useState } from "react";
 import type { AppRoute, NavigationItem } from "../types/navigation";
 
 const navigation: NavigationItem[] = [
-  { route: "dashboard", label: "Dashboard", icon: Gauge },
-  { route: "renamer", label: "Renamer", icon: FileCog },
+  { route: "workspace", label: "Workspace", icon: Gauge },
+  { route: "convert", label: "Convert", icon: FileCog },
+  { route: "compressor", label: "Compress", icon: ArchiveRestore },
+  { route: "renamer", label: "Rename", icon: FileCog },
   { route: "bulk-renamer", label: "Bulk Operations", icon: Copy },
-  { route: "compressor", label: "Compressor", icon: ArchiveRestore },
   { route: "history", label: "History", icon: History },
 ];
 
@@ -42,7 +43,7 @@ export function AppLayout({ activeRoute, brandIcon, children, onNavigate }: AppL
           <div className="brand-mark">{brandIcon}</div>
           <div>
             <strong>DocRename</strong>
-            <span>Local workspace</span>
+            <span>Privacy-first workspace</span>
           </div>
         </div>
 
@@ -79,7 +80,7 @@ export function AppLayout({ activeRoute, brandIcon, children, onNavigate }: AppL
           </div>
           <div className="sidebar-badge">
             <ShieldCheck aria-hidden="true" size={14} />
-            <span>Processed locally</span>
+            <span>Privacy-first processing</span>
           </div>
         </div>
       </aside>

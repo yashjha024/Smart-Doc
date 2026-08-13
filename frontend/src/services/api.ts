@@ -10,6 +10,8 @@ import type {
   RenamePreviewResponse,
   RenameRequest,
   RenameResult,
+  ConvertRequest,
+  ConvertResult,
 } from "../types/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api";
@@ -74,6 +76,12 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  convertDocument: (payload: ConvertRequest) =>
+    request<ConvertResult>("/convert", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
   exportDocument: (documentId: number, saveLocation: string = "default") =>
     request("/export/export", {
       method: "POST",
@@ -82,6 +90,9 @@ export const api = {
 
   downloadDocument: (documentId: number) =>
     `${API_BASE_URL}/export/download/${documentId}`,
+
+  downloadOutputFile: (filename: string) =>
+    `${API_BASE_URL}/convert/download/${filename}`,
 
   bulkRename: (documentIds: number[], template: string, prefix: string = "", suffix: string = "") =>
     request<BulkRenameResult>("/bulk/bulk-rename", {
