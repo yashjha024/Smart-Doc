@@ -48,5 +48,7 @@ def _migrate_schema() -> None:
 def init_db() -> None:
     from app.database import base  # noqa: F401
 
-    Base.metadata.create_all(bind=engine)
-    _migrate_schema()
+    if settings.environment.lower() != "production":
+        Base.metadata.create_all(bind=engine)
+        if settings.database_url.startswith("sqlite"):
+            _migrate_schema()

@@ -38,6 +38,11 @@ To support scaling from 1 to 20+ tools, we decoupled the backend from single-pur
 The visual layer is strictly governed by the `figma-reference/` directory. The application's `frontend/` directory faithfully reproduces this exact design (layout, typography, accents, shadows, components) using Tailwind CSS. 
 - The `ToolWorkspacePage` dynamically parses configurations (`radio`, `slider`, `text`) mapped from `tools.ts` to build settings panels automatically for any registered tool.
 
+**Production Deployment Architecture:**
+- **Frontend (Vercel)**: React + Vite application leveraging hash routing, avoiding the need for Vercel Serverless proxy limits. Communicates directly with the backend via `VITE_API_BASE_URL`.
+- **Backend (Railway)**: Dockerized FastAPI container handling CPU-intensive tasks (Ghostscript/PyMuPDF). Uses a Railway Persistent Volume mapped to `local_data` exclusively for temporary file storage during processing.
+- **Database (Supabase PostgreSQL)**: Migrated from SQLite to Supabase PostgreSQL for production. Environment validation strictly prevents silent SQLite usage in production environments.
+
 ---
 
 ## 🚀 Future Planning & Roadmap

@@ -16,8 +16,15 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
-    from pydantic import model_validator
+    from pydantic import model_validator, field_validator
     
+    @field_validator("cors_origins", mode="before")
+    def assemble_cors_origins(cls, v: str | list[str]) -> list[str]:
+        if isinstance(v, str) and not v.startswith("["):
+            return [i.strip() for i in v.split(",")]
+        elif isinstance(v, list):
+            return v
+        return v
     @model_validator(mode='after')
     def validate_production_database(self) -> 'Settings':
         if self.environment.lower() == "production":
