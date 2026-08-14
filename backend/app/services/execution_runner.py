@@ -42,7 +42,8 @@ class ExecutionRunner:
             try:
                 result = handler_func(job_id, db, *args, **kwargs)
                 output_files = result.get("output_files")
-                job_service.update_job_status(job_id, "completed", output_files=output_files)
+                result_metadata = result.get("metadata")
+                job_service.update_job_status(job_id, "completed", output_files=output_files, result_metadata=result_metadata)
             except Exception as e:
                 logger.error(f"Job {job_id} failed: {traceback.format_exc()}")
                 job_service.update_job_status(job_id, "failed", error_info=str(e))

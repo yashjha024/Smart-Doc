@@ -36,12 +36,15 @@ class JobService:
             )
         return job
 
-    def update_job_status(self, job_id: str, status: str, output_files: list[str] = None, error_info: Optional[str] = None) -> ProcessingJob:
+    def update_job_status(self, job_id: str, status: str, output_files: list[str] = None, result_metadata: dict = None, error_info: Optional[str] = None) -> ProcessingJob:
         job = self.get_job(job_id)
         job.status = status
         
         if output_files is not None:
             job.output_files = output_files
+            
+        if result_metadata is not None:
+            job.result_metadata = result_metadata
             
         if error_info:
             job.error_information = error_info

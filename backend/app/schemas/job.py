@@ -14,6 +14,7 @@ class JobResponse(BaseModel):
     input_files: list[str] = []
     output_files: list[str] = []
     configuration: Optional[Dict[str, Any]] = None
+    result_metadata: Optional[Dict[str, Any]] = None
     error_information: Optional[str] = None
     created_at: datetime
     updated_at: datetime

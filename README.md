@@ -1,18 +1,60 @@
-# DocRename
+# FileCraft (formerly DocRename)
 
-Local-first document management system for smart AI document renaming, OCR extraction, and PDF compression.
+FileCraft is a local-first, privacy-focused application for smart document renaming, PDF manipulation, and image processing. It leverages a clean, Figma-driven design system and a highly scalable asynchronous job architecture to handle complex file workflows locally.
 
-## Key Features
+---
 
-- **Local-First & Privacy Focused**: All OCR extraction, identifier detection, and document renaming happen locally without cloud uploads.
-- **Smart Document Renaming**: Automated identifier detection (dates, invoice numbers, amounts, vendors) with a Human-in-the-Loop review UI.
-- **Bulk Rename & History**: Batch process multiple documents with custom naming templates and complete undo/history tracking.
-- **PDF Compression**: Built-in compression presets and target-size PDF optimization.
-- **Dark Workspace UI**: High-contrast, productive UI designed for maximum legibility and efficiency.
+## 🎯 Product Management Context
+
+**Vision:**
+To provide a premium, privacy-respecting file utility suite that operates entirely locally without cloud uploads.
+
+**The Pivot (FileCraft):**
+The project evolved from a single-purpose "DocRename" tool into a unified "FileCraft" platform. Users needed more than just smart renaming—they required core PDF and image utilities (compression, merging, splitting, formatting).
+
+**Current State (Core Product Phases 1-3 Completed):**
+We have successfully established the foundational architecture and a unified `ToolWorkspace` frontend. The following core tools are fully active and verified end-to-end:
+- Compress PDF
+- PDF to JPG/PNG/WebP
+- Merge PDF
+- Split PDF (by page ranges)
+- Compress Image
+- Convert Image
+
+**Launch Target:** 
+The platform is preparing for an initial launch this weekend, focusing on delivering real, verified workflows rather than mock features. Unimplemented tools remain marked as "Coming Soon".
+
+---
+
+## 🛠 Engineering & Architecture Context
+
+**The Generic Job Architecture:**
+To support scaling from 1 to 20+ tools, we decoupled the backend from single-purpose database models (like `CompressionJob`) in favor of a universal `ProcessingJob` model. 
+- **ExecutionRunner**: Asynchronously dispatches jobs to isolated `BaseHandler` implementations.
+- **Data Model**: Uses `input_files` and `output_files` JSON arrays, ensuring the engine can support `1:1`, `many:1` (Merge), `1:many` (Split), and `many:many` workflows seamlessly.
+- **Result Metadata**: Handlers inject dynamic metadata (e.g., `metrics` for compression savings, `output_format` for ZIP vs PDF), allowing the frontend to intelligently render "Download ZIP" or display metric badges without hardcoding logic per tool.
+
+**Frontend Constraints & Source of Truth:**
+The visual layer is strictly governed by the `figma-reference/` directory. The application's `frontend/` directory faithfully reproduces this exact design (layout, typography, accents, shadows, components) using Tailwind CSS. 
+- The `ToolWorkspacePage` dynamically parses configurations (`radio`, `slider`, `text`) mapped from `tools.ts` to build settings panels automatically for any registered tool.
+
+---
+
+## 🚀 Future Planning & Roadmap
+
+**Immediate Next Steps:**
+1. **Migrate Legacy Rename Tools**: Port the "Smart Rename" and "Bulk Rename" features from the legacy backend into the new `ProcessingJob` architecture and `ToolWorkspace` frontend.
+2. **Deprecate Legacy Routes**: Once the rename tools are verified, safely remove legacy endpoints and single-purpose tables.
+
+**Long-Term Roadmap:**
+- **Advanced Job Queue**: Transition the `ExecutionRunner` from Python threading to Celery + Redis for true distributed processing capabilities.
+- **New Tools Expansion**: Implement the remaining "Coming Soon" tools from the registry (OCR, Edit PDF, Word to PDF, Archive Management, Image Cropping).
+
+---
 
 ## Quick Start
 
-### Backend (FastAPI)
+### Backend (FastAPI + SQLite + PyMuPDF/Ghostscript)
 
 ```powershell
 cd backend
@@ -22,7 +64,7 @@ pip install -r requirements.txt
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-### Frontend (React + Vite + TypeScript)
+### Frontend (React + Vite + Tailwind)
 
 ```powershell
 cd frontend
@@ -32,15 +74,3 @@ npm run dev
 
 * **Frontend**: `http://127.0.0.1:5173/`
 * **Backend API**: `http://127.0.0.1:8000`
-
-## Architecture & Roadmap
-
-1. Project foundation & local workspace
-2. File upload and document record management
-3. OCR extraction pipeline
-4. Identifier detection and review UI
-5. Naming templates, duplicate prevention, and bulk rename
-6. Rename history and undo capabilities
-7. PDF compression presets & target-size optimization
-8. Production hardening & packaging
-

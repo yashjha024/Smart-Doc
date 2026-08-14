@@ -16,11 +16,17 @@ def create_job(payload: JobCreate, db: Session = Depends(get_db)):
     from app.services.handlers.pdf_to_image import PdfToImageHandler
     from app.services.handlers.pdf_merge import PdfMergeHandler
     from app.services.handlers.pdf_split import PdfSplitHandler
+    from app.services.handlers.pdf_compress import PdfCompressHandler
+    from app.services.handlers.image_compress import ImageCompressionHandler
+    from app.services.handlers.image_convert import ImageConversionHandler
     
     handlers = {
+        "pdf-compress": PdfCompressHandler.execute,
         "pdf-to-image": PdfToImageHandler.execute,
         "pdf-merge": PdfMergeHandler.execute,
-        "pdf-split": PdfSplitHandler.execute
+        "pdf-split": PdfSplitHandler.execute,
+        "image-compress": ImageCompressionHandler.execute,
+        "image-convert": ImageConversionHandler.execute
     }
     
     if payload.tool_id not in handlers:

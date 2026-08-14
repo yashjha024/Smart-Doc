@@ -113,7 +113,14 @@ class PdfSplitHandler(BaseHandler):
         db.commit()
         db.refresh(out_record)
         
-        return {"output_files": [out_record.stored_reference]}
+        return {
+            "output_files": [out_record.stored_reference],
+            "metadata": {
+                "tool_specific": {
+                    "output_format": mode == "split" and "zip" or "pdf"
+                }
+            }
+        }
 
     @staticmethod
     def _parse_range(r_str: str, max_page: int) -> List[int]:

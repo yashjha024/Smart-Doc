@@ -18,6 +18,7 @@ class ProcessingJob(Base):
     
     configuration = Column(JSON, nullable=True)
     error_information = Column(Text, nullable=True)
+    result_metadata = Column(JSON, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

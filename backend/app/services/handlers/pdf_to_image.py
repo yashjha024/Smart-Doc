@@ -88,4 +88,11 @@ class PdfToImageHandler(BaseHandler):
         db.commit()
         db.refresh(out_record)
         
-        return {"output_files": [out_record.stored_reference]}
+        return {
+            "output_files": [out_record.stored_reference],
+            "metadata": {
+                "tool_specific": {
+                    "output_format": output_ext
+                }
+            }
+        }

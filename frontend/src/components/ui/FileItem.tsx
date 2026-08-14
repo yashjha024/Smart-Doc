@@ -1,0 +1,69 @@
+import React from "react";
+import { motion } from "motion/react";
+import { CheckCircle2, AlertCircle, X, ChevronUp, ChevronDown } from "lucide-react";
+import { ToolDef } from "../../config/tools";
+import { Badge } from "./Badge";
+import { formatBytes } from "../../utils/format";
+
+const A: Record<string, { icon: string; bg: string; border: string; dot: string }> = {
+  amber: { icon: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/25 dark:border-amber-400/20", dot: "bg-amber-500 dark:bg-amber-400" },
+  blue:  { icon: "text-blue-600 dark:text-blue-400",   bg: "bg-blue-500/10",  border: "border-blue-500/25 dark:border-blue-400/20",  dot: "bg-blue-500 dark:bg-blue-400" },
+  teal:  { icon: "text-teal-600 dark:text-teal-400",   bg: "bg-teal-500/10",  border: "border-teal-500/25 dark:border-teal-400/20",  dot: "bg-teal-500 dark:bg-teal-400" },
+};
+
+export type FileItemStatus = "idle" | "processing" | "success" | "error";
+
+export interface MockFile {
+  id: string; name: string; originalSize: number;
+  processedSize?: number; status: FileItemStatus; errorMsg?: string;
+  result_metadata?: any;
+}
+
+export function FileItem({ file, tool, onRemove, showResult, progress, onMoveUp, onMoveDown, showReorder }: { file: MockFile; tool: ToolDef; onRemove?: (id: string) => void; showResult?: boolean; progress?: number; onMoveUp?: () => void; onMoveDown?: () => void; showReorder?: boolean }) {
+  const fileExt = (name: string) => name.split(".").pop()?.toUpperCase() ?? "FILE";
+  const ext = fileExt(file.name);
+  const ta = A[tool.accent];
+  
+  let processed = file.processedSize ?? file.originalSize;
+  let pct = null;
+  if (file.result_metadata?.metrics) {
+      processed = file.result_metadata.metrics.compressed_size_bytes;
+      pct = file.result_metadata.metrics.savings_percent;
+  } else if (file.processedSize) {
+      pct = ((1 - file.processedSize / file.originalSize) * 100).toFixed(0);
+  }
+  
+  return (
+    <motion.div layout initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: 8 }}
+      className={`group flex items-center gap-3 px-4 py-3 border-b border-border/60 last:border-b-0 hover:bg-foreground/[0.02] transition-colors ${file.status === "error" ? "bg-destructive/4" : ""}`}>
+      {showReorder && (
+        <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+          <button onClick={onMoveUp} className="p-0.5 text-muted-foreground hover:text-foreground"><ChevronUp size={10} /></button>
+          <button onClick={onMoveDown} className="p-0.5 text-muted-foreground hover:text-foreground"><ChevronDown size={10} /></button>
+        </div>
+      )}
+      <div className={`flex-shrink-0 h-8 px-2 rounded-md flex items-center text-[10px] font-bold tracking-wide border ${ta.bg} ${ta.border} ${ta.icon}`}>{ext.slice(0, 4)}</div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
+        <div className="flex items-center gap-2 mt-0.5" style={{ fontFamily: "var(--font-mono)" }}>
+          <span className="text-xs text-muted-foreground">{formatBytes(file.originalSize)}</span>
+          {showResult && processed !== undefined && (<><span className="text-muted-foreground/40 text-xs">→</span><span className="text-xs text-teal-600 dark:text-teal-400">{formatBytes(processed)}</span>{pct && <Badge variant="success">-{pct}%</Badge>}</>)}
+          {file.status === "error" && <span className="text-xs text-destructive">{file.errorMsg}</span>}
+        </div>
+        {file.status === "processing" && progress !== undefined && (
+          <div className="mt-1.5 h-0.5 bg-muted rounded-full overflow-hidden w-full max-w-[180px]">
+            <motion.div className="h-full bg-primary" animate={{ width: `${progress}%` }} transition={{ duration: 0.3 }} />
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-1 flex-shrink-0">
+        {file.status === "processing" && <svg className="w-4 h-4 animate-spin text-primary" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.2" /><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>}
+        {file.status === "success" && <CheckCircle2 size={14} className="text-teal-600 dark:text-teal-400" />}
+        {file.status === "error" && <AlertCircle size={14} className="text-destructive" />}
+        {onRemove && file.status !== "processing" && (
+          <button onClick={() => onRemove(file.id)} className="w-6 h-6 rounded-md hover:bg-foreground/[0.07] flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"><X size={11} /></button>
+        )}
+      </div>
+    </motion.div>
+  );
+}

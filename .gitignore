@@ -42,6 +42,7 @@ tmp/
 uploads/
 
 # IDE & OS Files
+.gemini/
 .vscode/
 .idea/
 *.suo
