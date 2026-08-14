@@ -1,9 +1,11 @@
 from fastapi import APIRouter
 
-from app.routers import bulk, compression, documents, export, health, identifiers, ocr, rename, convert
+from app.routers import bulk, compression, documents, export, health, identifiers, ocr, rename, convert, files, jobs
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
+api_router.include_router(files.router, prefix="/files", tags=["files"])
+api_router.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
 api_router.include_router(documents.router, prefix="/documents", tags=["documents"])
 api_router.include_router(ocr.router, prefix="/ocr", tags=["ocr"])
 api_router.include_router(identifiers.router, prefix="/identifiers", tags=["identifiers"])

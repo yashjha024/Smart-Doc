@@ -114,4 +114,20 @@ export const api = {
         save_location: saveLocation,
       }),
     }),
+    
+  uploadFile: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return request<{file_id: string; original_filename: string}>("/files/upload", { method: "POST", body: formData });
+  },
+
+  createJob: (payload: { tool_id: string; input_files: string[]; configuration?: Record<string, any> }) =>
+    request<any>("/jobs", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getJob: (jobId: string) => request<any>(`/jobs/${jobId}`),
+
+  downloadFile: (fileId: string) => `${API_BASE_URL}/files/${fileId}/download`,
 };

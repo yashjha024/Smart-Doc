@@ -74,6 +74,10 @@ class CompressionService:
             job.output_filename = candidate.path.name
             job.compressed_size_bytes = compressed_size
             self.db.add(job)
+            
+            document.status = "compressed"
+            self.db.add(document)
+            
             self.db.commit()
             self.db.refresh(job)
 

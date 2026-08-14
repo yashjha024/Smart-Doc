@@ -31,16 +31,25 @@ class ConvertService:
 
         # PDF to Images (ZIP)
         if source_ext == ".pdf" and target_format in ["jpg", "png"]:
-            return self._convert_pdf_to_images(source_path, document.stored_filename, target_format)
+            output = self._convert_pdf_to_images(source_path, document.stored_filename, target_format)
+            self._mark_converted(document)
+            return output
         
         # Images to PDF
         if source_ext in [".jpg", ".jpeg", ".png"] and target_format == "pdf":
-            return self._convert_image_to_pdf(source_path, document.stored_filename)
+            output = self._convert_image_to_pdf(source_path, document.stored_filename)
+            self._mark_converted(document)
+            return output
 
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Conversion from {source_ext} to {target_format} is not supported."
         )
+
+    def _mark_converted(self, document: Document):
+        document.status = "converted"
+        self.db.add(document)
+        self.db.commit()
 
     def _convert_pdf_to_images(self, source_path: Path, stored_filename: str, img_format: str) -> str:
         source_stem = sanitize_filename(Path(stored_filename).stem)

@@ -8,11 +8,26 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "DocRename"
     app_version: str = "0.1.0"
+    environment: str = "development"
     database_url: str = "sqlite:///./docrename.db"
     storage_root: Path = Field(default=Path("local_data"))
     cors_origins: list[str] = ["http://127.0.0.1:5173", "http://localhost:5173"]
+    file_ttl_minutes: int = 60
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
+    from pydantic import model_validator
+    
+    @model_validator(mode='after')
+    def validate_production_database(self) -> 'Settings':
+        if self.environment.lower() == "production":
+            if not self.database_url or "sqlite" in self.database_url:
+                raise ValueError(
+                    "CRITICAL: Application is starting in 'production' environment "
+                    "but DATABASE_URL is either missing or set to SQLite. "
+                    "Production architecture requires PostgreSQL."
+                )
+        return self
 
     @property
     def upload_dir(self) -> Path:

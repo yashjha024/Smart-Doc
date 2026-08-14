@@ -21,8 +21,17 @@ export function ConvertPage() {
     setMessage({ kind: "info", text: "Uploading file..." });
 
     try {
-      const uploaded = await api.uploadDocument(file);
-      setDocument(uploaded);
+      const uploaded = await api.uploadFile(file);
+      // Map to old document format for UI temporarily
+      setDocument({
+        id: -1,
+        original_filename: uploaded.original_filename,
+        stored_filename: uploaded.file_id,
+        content_type: uploaded.original_filename.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg',
+        file_size_bytes: file.size,
+        status: "uploaded",
+        created_at: new Date().toISOString()
+      });
       
       const ext = uploaded.original_filename.split('.').pop()?.toLowerCase();
       if (ext === 'pdf') {
@@ -49,12 +58,28 @@ export function ConvertPage() {
     setMessage({ kind: "info", text: "Converting file..." });
 
     try {
-      const nextResult = await api.convertDocument({
-        document_id: document.id,
-        target_format: targetFormat,
+      let job = await api.createJob({
+        tool_id: "pdf-to-image",
+        input_files: [document.stored_filename],
+        configuration: { target_format: targetFormat },
       });
-      setResult(nextResult);
-      setMessage({ kind: "success", text: nextResult.message });
+
+      // Poll for job completion
+      while (job.status === "created" || job.status === "processing") {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        job = await api.getJob(job.id);
+      }
+
+      if (job.status === "failed") {
+        throw new Error(job.error_information || "Conversion failed.");
+      }
+
+      setResult({
+        document_id: -1,
+        output_filename: job.output_files[0],
+        message: "File successfully converted.",
+      });
+      setMessage({ kind: "success", text: "File successfully converted." });
     } catch (err) {
       setMessage({ kind: "error", text: err instanceof Error ? err.message : "Unable to convert file." });
     } finally {
@@ -160,7 +185,7 @@ export function ConvertPage() {
               </div>
               
               <a 
-                href={api.downloadOutputFile(result.output_filename)}
+                href={api.downloadFile(result.output_filename)}
                 className="button primary full"
                 style={{ textAlign: 'center', display: 'flex', justifyContent: 'center', marginTop: '16px' }}
                 download

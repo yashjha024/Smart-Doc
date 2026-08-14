@@ -24,10 +24,18 @@ def create_app() -> FastAPI:
 
     app.include_router(api_router, prefix="/api")
 
+    from app.services.cleanup_service import cleanup_service
+
     @app.on_event("startup")
     def on_startup() -> None:
         init_db()
         settings.ensure_local_directories()
+        cleanup_service.interval_seconds = settings.file_ttl_minutes * 60
+        cleanup_service.start()
+
+    @app.on_event("shutdown")
+    def on_shutdown() -> None:
+        cleanup_service.stop()
 
     return app
 
