@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from sqlalchemy import update
 
+from app.core.config import settings
 from app.database.session import SessionLocal
 from app.models.processing_job import ProcessingJob
 from app.services.job_service import JobService
@@ -33,7 +34,11 @@ class ExecutionRunner:
         """
         with SessionLocal() as db:
             JobService(db).update_job_status(job_id, "processing")
-        _executor.submit(ExecutionRunner._execute, job_id, handler_func, *args, **kwargs)
+        if settings.serverless:
+            # Serverless platforms stop work once the response is sent, so finish first.
+            ExecutionRunner._execute(job_id, handler_func, *args, **kwargs)
+        else:
+            _executor.submit(ExecutionRunner._execute, job_id, handler_func, *args, **kwargs)
 
     @staticmethod
     def _execute(job_id: str, handler_func: Callable, *args, **kwargs):

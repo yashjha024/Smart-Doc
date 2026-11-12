@@ -44,28 +44,33 @@ class RenameService:
 
         self._raise_for_missing_values(payload.template, payload.values)
         document = DocumentService(self.db).get_document(payload.document_id)
-        source_path = get_upload_path(document.stored_filename)
-        if not source_path.exists():
+        # Documents in the shared storage (file_ref) are renamed in the database only;
+        # the content never moves. Older documents still live on disk under their name.
+        in_storage = bool(document.file_ref)
+        source_path = None if in_storage else get_upload_path(document.stored_filename)
+        if source_path is not None and not source_path.exists():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Stored document file was not found.",
             )
+        extension = Path(document.original_filename).suffix.lower() if in_storage else source_path.suffix
 
         requested_filename = build_filename(
             template=payload.template,
             values=payload.values,
             prefix=payload.prefix,
             suffix=payload.suffix,
-            extension=source_path.suffix,
+            extension=extension,
         )
         final_filename = self._resolve_duplicate_filename(
             requested_filename=requested_filename,
             document_id=document.id,
             current_filename=document.stored_filename,
+            check_disk=not in_storage,
         )
-        target_path = get_upload_path(final_filename)
+        target_path = None if in_storage else get_upload_path(final_filename)
 
-        if source_path == target_path:
+        if final_filename == document.stored_filename:
             return RenameResult(
                 document_id=document.id,
                 filename=document.stored_filename,
@@ -75,7 +80,8 @@ class RenameService:
             )
 
         previous_filename = document.stored_filename
-        self._move_file(source_path, target_path)
+        if not in_storage:
+            self._move_file(source_path, target_path)
 
         try:
             history = RenameHistory(
@@ -92,7 +98,8 @@ class RenameService:
             self.db.refresh(history)
         except Exception:
             self.db.rollback()
-            self._move_file(target_path, source_path, best_effort=True)
+            if not in_storage:
+                self._move_file(target_path, source_path, best_effort=True)
             raise
 
         return RenameResult(
@@ -126,20 +133,30 @@ class RenameService:
                 detail="Cannot undo because the document has been renamed again after this history entry.",
             )
 
-        current_path = get_upload_path(history.new_filename)
-        restore_path = get_upload_path(history.previous_filename)
-        if not current_path.exists():
+        in_storage = bool(document.file_ref)
+        if in_storage:
+            if self._filename_exists(history.previous_filename, document.id, document.stored_filename, check_disk=False):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Cannot undo because the previous filename is now used by another document.",
+                )
+            current_path = restore_path = None
+        else:
+            current_path = get_upload_path(history.new_filename)
+            restore_path = get_upload_path(history.previous_filename)
+        if current_path is not None and not current_path.exists():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Current document file was not found.",
             )
-        if restore_path.exists():
+        if restore_path is not None and restore_path.exists():
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Cannot undo because the previous filename already exists.",
             )
 
-        self._move_file(current_path, restore_path)
+        if not in_storage:
+            self._move_file(current_path, restore_path)
 
         try:
             document.stored_filename = history.previous_filename
@@ -150,7 +167,8 @@ class RenameService:
             self.db.commit()
         except Exception:
             self.db.rollback()
-            self._move_file(restore_path, current_path, best_effort=True)
+            if not in_storage:
+                self._move_file(restore_path, current_path, best_effort=True)
             raise
 
         return RenameResult(
@@ -176,15 +194,15 @@ class RenameService:
                 detail=f"Missing template values: {', '.join(missing)}",
             )
 
-    def _resolve_duplicate_filename(self, requested_filename: str, document_id: int, current_filename: str) -> str:
+    def _resolve_duplicate_filename(self, requested_filename: str, document_id: int, current_filename: str, check_disk: bool = True) -> str:
         candidate = sanitize_filename(Path(requested_filename).stem) + Path(requested_filename).suffix
         counter = 1
-        while self._filename_exists(candidate, document_id, current_filename):
+        while self._filename_exists(candidate, document_id, current_filename, check_disk):
             candidate = append_duplicate_counter(requested_filename, counter)
             counter += 1
         return candidate
 
-    def _filename_exists(self, filename: str, document_id: int, current_filename: str) -> bool:
+    def _filename_exists(self, filename: str, document_id: int, current_filename: str, check_disk: bool = True) -> bool:
         if self.db is None:
             return False
 
@@ -196,7 +214,7 @@ class RenameService:
             Document.id != document_id,
         )
         exists_in_database = self.db.scalar(statement) is not None
-        exists_on_disk = get_upload_path(filename).exists()
+        exists_on_disk = check_disk and get_upload_path(filename).exists()
         return exists_in_database or exists_on_disk
 
     def _move_file(self, source: Path, target: Path, best_effort: bool = False) -> None:

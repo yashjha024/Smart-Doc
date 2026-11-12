@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.models.compression_job import CompressionJob
 from app.schemas.compression import CompressionMode, CompressionRequest, CompressionResult
 from app.services.document_service import DocumentService
-from app.utils.file_storage import get_output_path, get_upload_path
+from app.utils.file_storage import document_path, get_output_path
 from app.utils.filename import sanitize_filename
 from app.utils.pdf import bytes_to_kb, is_pdf
 
@@ -51,7 +51,7 @@ class CompressionService:
         self._validate_request(payload)
 
         document = DocumentService(self.db).get_document(payload.document_id)
-        source_path = get_upload_path(document.stored_filename)
+        source_path = document_path(document)
         self._validate_pdf(source_path)
 
         original_size = source_path.stat().st_size

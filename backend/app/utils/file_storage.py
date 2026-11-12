@@ -32,6 +32,15 @@ def _safe_child(base: Path, name: str) -> Path:
     return candidate
 
 
+def document_path(document) -> Path:
+    """Local path of a Bulk Rename document's content.
+    New documents live in the shared StorageProvider (file_ref); older ones in uploads/."""
+    if getattr(document, "file_ref", None):
+        from app.services.storage import get_storage_provider
+        return get_storage_provider().get_local_path(document.file_ref)
+    return get_upload_path(document.stored_filename)
+
+
 def get_upload_path(stored_filename: str) -> Path:
     return _safe_child(settings.upload_dir, stored_filename)
 

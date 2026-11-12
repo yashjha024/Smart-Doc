@@ -24,6 +24,8 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # The frontend reads the download name from this header (cross-origin on Vercel).
+        expose_headers=["Content-Disposition"],
     )
 
     app.include_router(api_router, prefix="/api")
@@ -34,6 +36,11 @@ def create_app() -> FastAPI:
     def on_startup() -> None:
         init_db()
         settings.ensure_local_directories()
+        if settings.serverless:
+            # No background threads: cleanup runs from Vercel Cron (/api/cron/cleanup)
+            # and opportunistically during requests. Other instances may still be
+            # running jobs, so never mark "processing" jobs as failed here.
+            return
         from app.services.execution_runner import ExecutionRunner
         ExecutionRunner.fail_interrupted_jobs()
         cleanup_service.interval_seconds = settings.cleanup_interval_minutes * 60

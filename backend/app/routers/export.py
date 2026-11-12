@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.schemas.export import ExportRequest, ExportResult
 from app.services.export_service import ExportService
-from app.utils.file_storage import get_upload_path
+from app.utils.file_storage import document_path
 
 router = APIRouter()
 
@@ -27,7 +27,7 @@ def download_document(document_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Document not found")
 
     try:
-        file_path = get_upload_path(document.stored_filename)
+        file_path = document_path(document)
     except ValueError:
         raise HTTPException(status_code=404, detail="File not found")
     if not file_path.is_file():

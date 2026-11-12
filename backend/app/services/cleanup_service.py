@@ -98,9 +98,12 @@ class CleanupService:
                 try:
                     for model in (OcrResult, DetectedIdentifier, RenameHistory, CompressionJob):
                         db.execute(delete(model).where(model.document_id == doc.id))
-                    path = settings.upload_dir / doc.stored_filename
-                    if path.is_file() and path.resolve().parent == settings.upload_dir.resolve():
-                        path.unlink()
+                    if doc.file_ref:
+                        get_storage_provider().delete(doc.file_ref)
+                    else:
+                        path = settings.upload_dir / doc.stored_filename
+                        if path.is_file() and path.resolve().parent == settings.upload_dir.resolve():
+                            path.unlink()
                     db.delete(doc)
                     db.commit()
                     removed += 1

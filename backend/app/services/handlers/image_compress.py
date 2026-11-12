@@ -134,7 +134,11 @@ class ImageCompressionHandler(BaseHandler):
             q = quality if quality is not None else 75
             best_output_bytes = _encode(q)
             quality_used = q
-            
+
+        # Never hand back a bigger file than the user uploaded (same format either way).
+        if len(best_output_bytes) >= original_size:
+            best_output_bytes = source_path.read_bytes()
+
         compressed_size = len(best_output_bytes)
         
         # If output is larger than input, just use the input if we don't strictly need a format change,

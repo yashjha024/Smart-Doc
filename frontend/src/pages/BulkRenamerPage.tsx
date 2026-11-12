@@ -40,8 +40,7 @@ export function BulkRenamerPage({ tool, onNav }: { tool: ToolDef; onNav: (p: App
   const refresh = async (ids = sessionIds) => {
     if (ids.length === 0) { setDocuments([]); return; }
     try {
-      const all = await api.listDocuments();
-      const mine = all.filter(d => ids.includes(d.id));
+      const mine = await api.listDocuments(ids);
       setDocuments(mine);
       // Drop ids the cleanup has already removed.
       if (mine.length !== ids.length) {
@@ -63,8 +62,8 @@ export function BulkRenamerPage({ tool, onNav }: { tool: ToolDef; onNav: (p: App
     setBusy("upload");
     const added: number[] = [];
     for (const file of ok) {
-      try { added.push((await api.uploadDocument(file)).id); }
-      catch { toast.error(`${file.name} failed to upload`); }
+      try { added.push((await api.uploadRenameDocument(file)).id); }
+      catch (err) { toast.error(err instanceof Error ? err.message : `${file.name} failed to upload`); }
     }
     const ids = [...sessionIds, ...added];
     setSessionIds(ids);

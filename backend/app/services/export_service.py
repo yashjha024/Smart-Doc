@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.document import Document
 from app.schemas.export import BulkExportResult, BulkRenameResult, ExportResult
-from app.utils.file_storage import get_upload_path
+from app.utils.file_storage import document_path
 
 
 class ExportService:
@@ -27,7 +27,7 @@ class ExportService:
                 detail="Document not found.",
             )
 
-        source_path = get_upload_path(document.stored_filename)
+        source_path = document_path(document)
         if not source_path.exists():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

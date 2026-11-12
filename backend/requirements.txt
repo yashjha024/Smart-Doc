@@ -8,3 +8,5 @@ Pillow==12.3.0
 # 0.5.8: newer releases require PyMuPDF 2.x and onnxruntime
 pdf2docx==0.5.8
 psycopg2-binary==2.9.9
+# Vercel Blob storage (used when STORAGE_BACKEND=blob)
+vercel-blob==0.5.1

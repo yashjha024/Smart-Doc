@@ -40,7 +40,8 @@ async function readError(response: Response): Promise<string> {
 }
 
 export const api = {
-  listDocuments: () => request<DocumentRecord[]>("/documents"),
+  /** Only the given documents (the API never lists other visitors' files). */
+  listDocuments: (ids: number[]) => request<DocumentRecord[]>(`/documents?ids=${ids.join(",")}`),
 
   uploadDocument: (file: File) => {
     const formData = new FormData();
@@ -115,10 +116,35 @@ export const api = {
       }),
     }),
     
-  uploadFile: (file: File) => {
+  /** Uploads a file for processing. On Vercel the browser sends it straight to Vercel Blob
+   *  (functions only accept 4.5 MB bodies), then registers it with the API. */
+  uploadFile: async (file: File): Promise<{ file_id: string; original_filename: string }> => {
+    const config = await getUploadConfig();
+    if (file.size > config.max_upload_mb * 1024 * 1024) {
+      throw new Error(`${file.name} is larger than the ${config.max_upload_mb} MB limit.`);
+    }
+    if (config.mode === "blob") {
+      const { upload } = await import("@vercel/blob/client");
+      const blob = await upload(blobPathname(file.name), file, {
+        access: "public",
+        handleUploadUrl: absoluteApiUrl("/files/blob-token"),
+        contentType: file.type || undefined,
+        multipart: file.size > 8 * 1024 * 1024,
+      });
+      return request("/files/register", {
+        method: "POST",
+        body: JSON.stringify({ pathname: blob.pathname, filename: file.name, content_type: file.type || null }),
+      });
+    }
     const formData = new FormData();
     formData.append("file", file);
-    return request<{file_id: string; original_filename: string}>("/files/upload", { method: "POST", body: formData });
+    return request("/files/upload", { method: "POST", body: formData });
+  },
+
+  /** Bulk Rename: upload through the normal path, then make it a rename document. */
+  uploadRenameDocument: async (file: File) => {
+    const { file_id } = await api.uploadFile(file);
+    return request<DocumentRecord>("/documents/from-file", { method: "POST", body: JSON.stringify({ file_id }) });
   },
 
   createJob: (payload: { tool_id: string; input_files: string[]; configuration?: Record<string, any> }) =>
@@ -156,6 +182,25 @@ async function saveFromPath(path: string, fallbackName: string) {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+type UploadConfig = { mode: "direct" | "blob"; max_upload_mb: number };
+let uploadConfig: Promise<UploadConfig> | null = null;
+
+function getUploadConfig(): Promise<UploadConfig> {
+  uploadConfig ??= request<UploadConfig>("/files/upload-config").catch(err => { uploadConfig = null; throw err; });
+  return uploadConfig;
+}
+
+function absoluteApiUrl(path: string): string {
+  return new URL(`${API_BASE_URL}${path}`, window.location.href).toString();
+}
+
+/** Must match REFERENCE_PATTERN in backend/app/services/storage.py: <32 hex>_<url-safe name>. */
+function blobPathname(filename: string): string {
+  const hex = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, "0")).join("");
+  const safe = filename.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "").replace(/\.\.+/g, ".").slice(-150) || "file";
+  return `${hex}_${safe}`;
 }
 
 /** Thrown when a processed file has been deleted by the 60-minute cleanup. */

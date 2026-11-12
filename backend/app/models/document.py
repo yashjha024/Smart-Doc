@@ -16,3 +16,6 @@ class Document(Base):
     status = Column(String(50), nullable=False, default="uploaded")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     export_count = Column(Integer, default=0, nullable=False)  # Track export count for bulk operations
+    # Reference in the shared StorageProvider (local disk or Vercel Blob). Older rows
+    # predate this and keep their file in storage_root/uploads under stored_filename.
+    file_ref = Column(String(255), nullable=True)

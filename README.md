@@ -79,3 +79,34 @@ npm run dev
 
 * **Frontend**: `http://127.0.0.1:5173/`
 * **Backend API**: `http://127.0.0.1:8000`
+
+Run the backend tests with `venv\Scripts\python -m pytest tests` (install `requirements-dev.txt` first).
+
+---
+
+## Deployment (Vercel, free Hobby plan)
+
+Live: website **https://filecraft-theta.vercel.app**, API **https://filecraft-api.vercel.app**.
+
+Two Vercel projects deployed with the Vercel CLI:
+
+| Project | Folder | Notes |
+|---|---|---|
+| `filecraft` | `frontend/` | Vite build. `VITE_API_BASE_URL=https://filecraft-api.vercel.app/api` |
+| `filecraft-api` | `backend/` | FastAPI preset. Neon Postgres (`DATABASE_URL`), Vercel Blob (`BLOB_READ_WRITE_TOKEN`), `ENVIRONMENT=production`, `CRON_SECRET`, `CORS_ORIGINS=https://filecraft-theta.vercel.app` |
+
+How the backend behaves on Vercel (switched automatically by `VERCEL=1`):
+- **Uploads** go from the browser straight to Vercel Blob (functions only accept 4.5 MB), then `POST /api/files/register`. The API mints the Blob client token itself (`app/services/blob_tokens.py`).
+- **Jobs** run inside the request (`JOB_MODE=inline`), up to 300 s.
+- **Downloads** stream through the API, so large results work.
+- **Cleanup** runs from Vercel Cron once a day (Hobby limit) and every 10 minutes while the app is in use.
+- **PDF compression** uses PyMuPDF (Ghostscript isn't available). OCR for scans isn't available; Bulk Rename works on text-based PDFs.
+
+Redeploy after changes:
+
+```powershell
+cd backend;  vercel deploy --prod
+cd frontend; vercel deploy --prod
+```
+
+Locally nothing changes: background jobs, local disk storage and SQLite, as in Quick Start.

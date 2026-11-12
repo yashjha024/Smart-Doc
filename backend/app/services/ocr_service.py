@@ -11,7 +11,7 @@ from app.models.detected_identifier import DetectedIdentifier
 from app.models.ocr_result import OcrResult
 from app.services.document_service import DocumentService
 from app.services.identifier_service import IdentifierService
-from app.utils.file_storage import get_upload_path
+from app.utils.file_storage import document_path
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class OcrService:
 
     def extract_for_document(self, document_id: int) -> OcrResult:
         document = DocumentService(self.db).get_document(document_id)
-        file_path = get_upload_path(document.stored_filename)
+        file_path = document_path(document)
 
         extracted_text, engine = self.extract_text(file_path)
         if not extracted_text.strip():

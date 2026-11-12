@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models.document import Document
 from app.services.document_service import DocumentService
-from app.utils.file_storage import get_output_path, get_upload_path
+from app.utils.file_storage import document_path, get_output_path
 
 logger = logging.getLogger(__name__)
 from app.utils.filename import sanitize_filename
@@ -21,7 +21,7 @@ class ConvertService:
 
     def convert_document(self, document_id: int, target_format: str) -> str:
         document = DocumentService(self.db).get_document(document_id)
-        source_path = get_upload_path(document.stored_filename)
+        source_path = document_path(document)
         
         if not source_path.exists():
             raise HTTPException(

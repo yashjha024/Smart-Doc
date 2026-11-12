@@ -134,6 +134,14 @@ def test_split_pdf_out_of_range_fails_cleanly(client):
     assert "out of bounds" in job["error_information"]
 
 
+def test_image_compress_never_grows_the_file(client):
+    # Random noise PNGs get bigger when re-encoded; the original must come back instead.
+    data = make_image("PNG", (300, 300))
+    job = run_job(client, "image-compress", [upload(client, "noise.png", data)], {"quality": 90})
+    assert job["status"] == "completed", job["error_information"]
+    assert len(download(client, job["output_files"][0])) <= len(data)
+
+
 def test_image_compress(client):
     data = make_image("JPEG", (1200, 900))
     job = run_job(client, "image-compress", [upload(client, "photo.jpg", data)], {"quality": 40})

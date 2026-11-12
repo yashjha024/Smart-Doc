@@ -1,0 +1,13 @@
+# Never upload local state, secrets or virtual environments to Vercel
+.env
+.env.*
+!.env.example
+venv/
+.venv/
+local_data/
+*.db
+__pycache__/
+.pytest_cache/
+tests/
+test_*.py
+dummy*.pdf
