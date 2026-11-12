@@ -53,7 +53,7 @@ def test_uploaded_file_can_be_downloaded(client):
 
 def test_unknown_tool_is_rejected(client):
     ref = upload(client, "a.pdf", make_pdf(1))
-    res = client.post("/api/jobs", json={"tool_id": "pdf-to-word", "input_files": [ref]})
+    res = client.post("/api/jobs", json={"tool_id": "edit-pdf", "input_files": [ref]})
     assert res.status_code == 400
 
 

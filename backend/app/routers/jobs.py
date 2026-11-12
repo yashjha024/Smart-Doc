@@ -11,6 +11,11 @@ from app.services.handlers.pdf_split import PdfSplitHandler
 from app.services.handlers.pdf_compress import PdfCompressHandler
 from app.services.handlers.image_compress import ImageCompressionHandler
 from app.services.handlers.image_convert import ImageConversionHandler
+from app.services.handlers.image_resize import ImageResizeHandler
+from app.services.handlers.image_crop import ImageCropHandler
+from app.services.handlers.image_to_pdf import ImageToPdfHandler
+from app.services.handlers.archive import ZipHandler, UnzipHandler
+from app.services.handlers.pdf_to_word import PdfToWordHandler
 
 router = APIRouter()
 
@@ -22,6 +27,12 @@ HANDLERS = {
     "split-pdf": PdfSplitHandler.execute,
     "image-compress": ImageCompressionHandler.execute,
     "image-convert": ImageConversionHandler.execute,
+    "resize-image": ImageResizeHandler.execute,
+    "crop-image": ImageCropHandler.execute,
+    "image-to-pdf": ImageToPdfHandler.execute,
+    "zip-files": ZipHandler.execute,
+    "unzip-files": UnzipHandler.execute,
+    "pdf-to-word": PdfToWordHandler.execute,
 }
 
 # Older ids, kept so existing scripts and stored jobs still resolve.

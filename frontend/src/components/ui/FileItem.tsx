@@ -23,6 +23,8 @@ export interface MockFile {
   jobId?: string;
   /** Server reference of the processed result. */
   outputRef?: string;
+  /** Several results from one input (e.g. files extracted from an archive). */
+  outputs?: { ref: string; name: string; size: number }[];
 }
 
 export function FileItem({ file, tool, onRemove, showResult, progress, onMoveUp, onMoveDown, showReorder, onDownload }: { file: MockFile; tool: ToolDef; onRemove?: (id: string) => void; showResult?: boolean; progress?: number; onMoveUp?: () => void; onMoveDown?: () => void; showReorder?: boolean; onDownload?: () => void }) {

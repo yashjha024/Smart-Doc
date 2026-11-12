@@ -5,4 +5,6 @@ pydantic-settings==2.7.1
 python-multipart==0.0.20
 PyMuPDF==1.25.1
 Pillow==12.3.0
+# 0.5.8: newer releases require PyMuPDF 2.x and onnxruntime
+pdf2docx==0.5.8
 psycopg2-binary==2.9.9

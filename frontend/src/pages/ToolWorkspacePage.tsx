@@ -50,7 +50,14 @@ function StepBar({ step }: { step: WorkStep }) {
 
 export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: AppRoute) => void }) {
   const ta = ACCENTS[tool.accent];
-  const isMerge = tool.id === "merge-pdf";
+  const combines = !!tool.combinesFiles;
+  const minFiles = tool.id === "merge-pdf" ? 2 : 1;
+  const COMBINED_LABELS: Record<string, { name: string; done: (n: number) => string; button: string; list: string }> = {
+    "merge-pdf": { name: "merged.pdf", done: n => `${n} PDFs merged into one`, button: "Download merged PDF", list: "Merged from" },
+    "zip-files": { name: "files.zip", done: n => `${n} file${n !== 1 ? "s" : ""} zipped into one archive`, button: "Download ZIP", list: "Zipped files" },
+    "image-to-pdf": { name: "images.pdf", done: n => `${n} image${n !== 1 ? "s" : ""} combined into one PDF`, button: "Download PDF", list: "Pages, in order" },
+  };
+  const combined = COMBINED_LABELS[tool.id] ?? COMBINED_LABELS["merge-pdf"];
   const isCompress = tool.id.includes("compress");
   const comingSoon = tool.status === "coming-soon";
 
@@ -137,7 +144,7 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
 
   // Retry with the same uploads (they stay on the server for 60 minutes).
   const retry = () => {
-    setFiles(prev => prev.filter(f => f.fileRef).map(f => ({ ...f, status: "idle", errorMsg: undefined, jobId: undefined, outputRef: undefined, result_metadata: undefined })));
+    setFiles(prev => prev.filter(f => f.fileRef).map(f => ({ ...f, status: "idle", errorMsg: undefined, jobId: undefined, outputRef: undefined, result_metadata: undefined, outputs: undefined })));
     setMergeResult(null);
     setJobError(null);
     setStep("options");
@@ -153,10 +160,15 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
   const startJob = async () => {
     const ready = files.filter(f => f.status === "idle" && f.fileRef);
     if (ready.length === 0) { toast.error("No valid files to process"); return; }
-    if (isMerge && ready.length < 2) { toast.error("Add at least two PDFs to merge."); return; }
+    if (ready.length < minFiles) { toast.error(`Add at least ${minFiles} files.`); return; }
 
     // Validate options before switching to the processing state.
-    const finalConfig: Record<string, any> = { ...config };
+    const finalConfig: Record<string, any> = {};
+    for (const opt of visibleOptions) {
+      const v = config[opt.id];
+      if (v !== "" && v !== undefined && v !== null) finalConfig[opt.id] = v;
+    }
+    if (config.target_size_kb) finalConfig.target_size_kb = config.target_size_kb;
     if (tool.id === "split-pdf") {
       const parts = String(finalConfig.ranges || "").split(",").map((s: string) => s.trim()).filter(Boolean);
       if (parts.length === 0) { toast.error("Enter the pages to keep, e.g. 1-3, 5"); return; }
@@ -172,7 +184,7 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
 
     const create = (inputRefs: string[]) => api.createJob({ tool_id: tool.id, input_files: inputRefs, configuration: finalConfig });
 
-    if (isMerge) {
+    if (combines) {
       try {
         const job = await create(ready.map(f => f.fileRef!));
         setFiles(prev => prev.map(f => ({ ...f, jobId: job.id })));
@@ -213,13 +225,14 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
           if (cancelled) return;
           for (const job of jobs) {
             if (job.status === "completed") {
-              if (isMerge) setMergeResult({ outputRef: job.output_files[0], name: "merged.pdf" });
+              if (combines) setMergeResult({ outputRef: job.output_files[0], name: combined.name });
               setFiles(prev => prev.map(f => f.jobId === job.id ? {
-                ...f, status: "success", outputRef: isMerge ? undefined : job.output_files[0], result_metadata: job.result_metadata,
+                ...f, status: "success", outputRef: combines ? undefined : job.output_files[0], result_metadata: job.result_metadata,
+                outputs: job.result_metadata?.tool_specific?.outputs,
               } : f));
             } else if (job.status === "failed") {
               const msg = job.error_information || "Processing failed";
-              if (isMerge) { failAll(msg); return; }
+              if (combines) { failAll(msg); return; }
               setFiles(prev => prev.map(f => f.jobId === job.id ? { ...f, status: "error", errorMsg: msg } : f));
             }
           }
@@ -238,7 +251,7 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
 
     timer = setTimeout(tick, 500);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [step, isMerge]);
+  }, [step, combines]);
 
   // Progress ring: real share of finished files, plus a slow creep so a single long job still moves.
   useEffect(() => {
@@ -282,16 +295,22 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
 
   const downloadAll = async () => {
     if (mergeResult) { await saveOutput(mergeResult.outputRef, mergeResult.name); return; }
-    for (const f of files.filter(f => f.status === "success" && f.outputRef)) {
-      await saveOutput(f.outputRef, f.name);
+    for (const f of files.filter(f => f.status === "success")) {
+      if (f.outputs) {
+        for (const o of f.outputs) await saveOutput(o.ref, o.name.split("/").pop() || o.name);
+      } else if (f.outputRef) {
+        await saveOutput(f.outputRef, f.name);
+      }
     }
   };
 
   // ─── Derived ──────────────────────────────────────────────────────────────
+  const visibleOptions = tool.options.filter(o => !o.showIf || o.showIf.values.includes(String(config[o.showIf.option])));
   const uploading = files.some(f => f.status === "processing");
   const readyCount = files.filter(f => f.status === "idle").length;
-  const canContinue = !uploading && readyCount >= (isMerge ? 2 : 1);
+  const canContinue = !uploading && readyCount >= minFiles;
   const successFiles = files.filter(f => f.status === "success");
+  const extractedCount = successFiles.reduce((n, f) => n + (f.outputs?.length ?? 0), 0);
   const failedFiles = files.filter(f => f.status === "error");
   const outputFormat = successFiles[0]?.result_metadata?.tool_specific?.output_format;
 
@@ -365,7 +384,7 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
                         className={`relative flex flex-col items-center justify-center gap-4 p-12 rounded-2xl border-2 border-dashed transition-all duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${drag ? "border-primary/60 bg-primary/[0.04] scale-[1.005]" : "border-border hover:border-foreground/[0.20] hover:bg-foreground/[0.015]"}`}>
                         <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border transition-all ${drag ? `${ta.bg} ${ta.border}` : "bg-muted border-border"}`}><Upload size={22} className={drag ? ta.icon : "text-muted-foreground"} /></div>
                         <div className="text-center">
-                          <p className="text-base font-semibold text-foreground mb-1">{drag ? "Release to upload" : isMerge ? "Drop multiple files here" : "Drop files here"}</p>
+                          <p className="text-base font-semibold text-foreground mb-1">{drag ? "Release to upload" : combines ? "Drop multiple files here" : "Drop files here"}</p>
                           <p className="text-sm text-muted-foreground">or click to browse your computer</p>
                         </div>
                         <span className="text-xs text-muted-foreground px-2.5 py-1 rounded-full bg-muted" style={{ fontFamily: "var(--font-mono)" }}>{tool.accepts === "*" ? "Any file type" : tool.accepts}</span>
@@ -378,14 +397,14 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
                             <div className="px-4 py-2.5 border-b border-border flex items-center justify-between bg-muted/30">
                               <div className="flex items-center gap-2">
                                 <span className="text-xs font-medium text-muted-foreground" style={{ fontFamily: "var(--font-mono)" }}>{files.length} file{files.length !== 1 ? "s" : ""}</span>
-                                {isMerge && files.length > 1 && <span className="text-xs text-muted-foreground">· use the arrows to set the order</span>}
+                                {tool.orderMatters && files.length > 1 && <span className="text-xs text-muted-foreground">· use the arrows to set the order</span>}
                               </div>
                               <button onClick={() => setFiles([])} className="text-xs text-muted-foreground hover:text-destructive transition-colors">Clear all</button>
                             </div>
                             <ul>
                               {files.map((f, i) => (
                                 <li key={f.id}>
-                                  <FileItem file={f} tool={tool} onRemove={removeFile} showReorder={isMerge && files.length > 1}
+                                  <FileItem file={f} tool={tool} onRemove={removeFile} showReorder={!!tool.orderMatters && files.length > 1}
                                     onMoveUp={i > 0 ? () => moveFile(i, -1) : undefined} onMoveDown={i < files.length - 1 ? () => moveFile(i, 1) : undefined} />
                                 </li>
                               ))}
@@ -400,7 +419,7 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
                       {files.length > 0 && (
                         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-end gap-3">
                           {uploading && <span className="text-xs text-muted-foreground">Uploading…</span>}
-                          {!uploading && isMerge && readyCount < 2 && <span className="text-xs text-muted-foreground">Add at least two PDFs</span>}
+                          {!uploading && readyCount < minFiles && <span className="text-xs text-muted-foreground">Add at least {minFiles} files</span>}
                           <Btn v="primary" disabled={!canContinue} onClick={() => setStep("options")}>Continue <ChevronRight size={15} /></Btn>
                         </motion.div>
                       )}
@@ -435,15 +454,20 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
                             <p className="text-sm text-muted-foreground">No setup needed — we'll use the best settings automatically.</p>
                           </div>
                         ) : (
-                          tool.options.map(opt => (
+                          visibleOptions.map(opt => (
                             <fieldset key={opt.id} className="p-5 rounded-xl border border-border bg-card">
-                              {opt.type === "text" ? (
+                              {opt.type === "text" || opt.type === "number" ? (
                                 <>
                                   <label htmlFor={`opt-${opt.id}`} className="text-sm font-semibold text-foreground block mb-1.5">{opt.label.replace(/\s*\(.*\)/, "")}</label>
                                   {tool.id === "split-pdf" && <p className="text-xs text-muted-foreground mb-3">Separate ranges with commas. Use a hyphen for a range of pages.</p>}
-                                  <input id={`opt-${opt.id}`} type="text" value={config[opt.id] ?? ""} onChange={e => setConfig(p => ({ ...p, [opt.id]: e.target.value }))}
-                                    placeholder={opt.label.match(/\((?:e\.g\.\s*)?(.*?)\)/)?.[1] ? `e.g. ${opt.label.match(/\((?:e\.g\.\s*)?(.*?)\)/)![1]}` : ""}
-                                    className={inputClass} style={{ fontFamily: "var(--font-mono)" }} />
+                                  <div className="relative">
+                                    <input id={`opt-${opt.id}`} type={opt.type} inputMode={opt.type === "number" ? "numeric" : undefined} min={opt.min} max={opt.max}
+                                      value={config[opt.id] ?? ""}
+                                      onChange={e => setConfig(p => ({ ...p, [opt.id]: opt.type === "number" ? (e.target.value === "" ? "" : Number(e.target.value)) : e.target.value }))}
+                                      placeholder={opt.placeholder ?? (opt.label.match(/\((?:e\.g\.\s*)?(.*?)\)/)?.[1] ? `e.g. ${opt.label.match(/\((?:e\.g\.\s*)?(.*?)\)/)![1]}` : "")}
+                                      className={`${inputClass} ${opt.unit ? "pr-10" : ""}`} style={{ fontFamily: "var(--font-mono)" }} />
+                                    {opt.unit && <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none" style={{ fontFamily: "var(--font-mono)" }}>{opt.unit}</span>}
+                                  </div>
                                 </>
                               ) : (
                                 <legend className="text-sm font-semibold text-foreground mb-4 float-left w-full">{opt.label}</legend>
@@ -503,7 +527,7 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
                         <div className="w-10 h-10 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center flex-shrink-0"><CheckCircle2 size={18} className="text-teal-600 dark:text-teal-400" /></div>
                         <div className="flex-1">
                           <p className="text-sm font-semibold text-foreground">
-                            {mergeResult ? `${successFiles.length} PDFs merged into one` : `${successFiles.length} file${successFiles.length !== 1 ? "s" : ""} ready to download`}
+                            {mergeResult ? combined.done(successFiles.length) : extractedCount > 0 ? `${extractedCount} file${extractedCount !== 1 ? "s" : ""} extracted` : `${successFiles.length} file${successFiles.length !== 1 ? "s" : ""} ready to download`}
                           </p>
                           <p className="text-xs text-muted-foreground mt-0.5">
                             Files are deleted in 60 min
@@ -511,7 +535,7 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
                           </p>
                         </div>
                         <Btn v="primary" sz="sm" onClick={downloadAll}>
-                          <Download size={14} /> {mergeResult ? "Download merged PDF" : successFiles.length > 1 ? `Download all (${successFiles.length})` : outputFormat === "zip" ? "Download ZIP" : "Download"}
+                          <Download size={14} /> {mergeResult ? combined.button : extractedCount > 1 ? `Download all (${extractedCount})` : successFiles.length > 1 ? `Download all (${successFiles.length})` : outputFormat === "zip" ? "Download ZIP" : "Download"}
                         </Btn>
                       </motion.div>
 
@@ -532,11 +556,22 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
                       )}
 
                       <div className="rounded-xl border border-border overflow-hidden bg-card">
-                        <div className="px-4 py-2.5 border-b border-border bg-muted/30"><span className="text-xs font-medium text-muted-foreground" style={{ fontFamily: "var(--font-mono)" }}>{mergeResult ? "Merged from" : "Your results"}</span></div>
+                        <div className="px-4 py-2.5 border-b border-border bg-muted/30"><span className="text-xs font-medium text-muted-foreground" style={{ fontFamily: "var(--font-mono)" }}>{mergeResult ? combined.list : "Your results"}</span></div>
                         <ul>
                           {files.map((f, i) => (
                             <motion.li key={f.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-                              <FileItem file={f} tool={tool} showResult onDownload={f.outputRef ? () => saveOutput(f.outputRef, f.name) : undefined} />
+                              <FileItem file={f} tool={tool} showResult onDownload={f.outputRef && !f.outputs ? () => saveOutput(f.outputRef, f.name) : undefined} />
+                              {f.outputs && (
+                                <ul className="border-t border-border/50 bg-muted/20">
+                                  {f.outputs.map(o => (
+                                    <li key={o.ref} className="flex items-center gap-3 pl-10 pr-4 py-2 border-b border-border/40 last:border-b-0">
+                                      <span className="flex-1 min-w-0 text-xs text-foreground truncate" style={{ fontFamily: "var(--font-mono)" }}>{o.name}</span>
+                                      <span className="text-[11px] text-muted-foreground" style={{ fontFamily: "var(--font-mono)" }}>{formatBytes(o.size)}</span>
+                                      <button onClick={() => saveOutput(o.ref, o.name.split("/").pop() || o.name)} aria-label={`Download ${o.name}`} className="h-7 px-2.5 rounded-md text-xs font-medium flex items-center gap-1 text-primary hover:bg-primary/10 transition-colors"><Download size={12} /> Save</button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
                             </motion.li>
                           ))}
                         </ul>
