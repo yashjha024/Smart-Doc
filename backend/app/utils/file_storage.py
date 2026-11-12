@@ -23,10 +23,19 @@ def save_upload(file: UploadFile) -> tuple[str, int]:
     return stored_filename, size
 
 
+def _safe_child(base: Path, name: str) -> Path:
+    """Resolve name inside base, rejecting anything that escapes it (e.g. '..\\.env')."""
+    base_resolved = base.resolve()
+    candidate = (base_resolved / name).resolve()
+    if candidate.parent != base_resolved:
+        raise ValueError("Invalid file name.")
+    return candidate
+
+
 def get_upload_path(stored_filename: str) -> Path:
-    return settings.upload_dir / stored_filename
+    return _safe_child(settings.upload_dir, stored_filename)
 
 
 def get_output_path(output_filename: str) -> Path:
     settings.ensure_local_directories()
-    return settings.output_dir / output_filename
+    return _safe_child(settings.output_dir, output_filename)

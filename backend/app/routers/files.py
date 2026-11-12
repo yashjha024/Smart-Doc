@@ -7,6 +7,7 @@ from app.database.session import get_db
 from app.models.file_record import FileRecord
 from app.services.storage import get_storage_provider
 from app.core.config import settings
+from app.utils.file_types import content_matches_extension
 
 router = APIRouter()
 
@@ -17,9 +18,26 @@ def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
     if not file.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A file name is required.")
 
-    file_bytes = file.file.read()
+    # Read in chunks so an oversized upload is rejected without loading it all.
+    limit = settings.max_upload_mb * 1024 * 1024
+    chunks, total = [], 0
+    while chunk := file.file.read(1024 * 1024):
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"{file.filename} is larger than the {settings.max_upload_mb} MB limit.",
+            )
+        chunks.append(chunk)
+    file_bytes = b"".join(chunks)
+
     if not file_bytes:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The uploaded file is empty.")
+    if not content_matches_extension(file.filename, file_bytes[:1024]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{file.filename} doesn't look like a real {file.filename.rsplit('.', 1)[-1].upper()} file.",
+        )
     stored_ref = storage.put(file_bytes, file.filename)
     
     ttl = timedelta(minutes=settings.file_ttl_minutes)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
@@ -24,9 +24,12 @@ def download_converted(filename: str):
     from app.utils.file_storage import get_output_path
     import os
     
-    file_path = get_output_path(filename)
-    if not file_path.exists():
-        return {"error": "File not found"}
+    try:
+        file_path = get_output_path(filename)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="File not found")
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
         
     return FileResponse(
         path=file_path,

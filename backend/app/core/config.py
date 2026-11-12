@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     # NoDecode: accept a plain comma-separated env value instead of requiring JSON.
     cors_origins: Annotated[list[str], NoDecode] = ["http://127.0.0.1:5173", "http://localhost:5173"]
     file_ttl_minutes: int = 60
+    max_upload_mb: int = 50
+    cleanup_interval_minutes: int = 10
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

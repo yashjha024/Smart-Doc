@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -24,11 +24,14 @@ def download_document(document_id: int, db: Session = Depends(get_db)):
 
     document = db.get(Document, document_id)
     if document is None:
-        return {"error": "Document not found"}
+        raise HTTPException(status_code=404, detail="Document not found")
 
-    file_path = get_upload_path(document.stored_filename)
-    if not file_path.exists():
-        return {"error": "File not found"}
+    try:
+        file_path = get_upload_path(document.stored_filename)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="File not found")
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
 
     return FileResponse(
         path=file_path,

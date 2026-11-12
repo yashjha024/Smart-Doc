@@ -5,17 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>FileCraft</title>
     <style>
-      /* Prevent unstyled flash before Vite loads CSS */
-      html, body { margin: 0; background-color: #f8fafc; }
-      html[data-theme='dark'], html[data-theme='dark'] body { background-color: #09090f; }
+      /* Match theme.css --background so there is no flash before Vite loads CSS */
+      html, body { margin: 0; background-color: #F7F4EF; }
+      html.dark, html.dark body { background-color: #111110; }
     </style>
     <script>
-      (function() {
+      // Apply the saved theme (or the system preference) before first paint.
+      // Keep in sync with toggleTheme in src/App.tsx.
+      (function () {
         try {
-          var theme = localStorage.getItem('theme');
-          if (theme === 'dark' || (!theme)) {
-            document.documentElement.setAttribute('data-theme', 'dark');
-          }
+          var stored = localStorage.getItem('fc-theme');
+          var dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+          if (dark) document.documentElement.classList.add('dark');
         } catch (e) {}
       })();
     </script>

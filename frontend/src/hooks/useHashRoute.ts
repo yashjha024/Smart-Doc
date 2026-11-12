@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AppRoute } from "../types/navigation";
 
-const routes = new Set<AppRoute>(["home", "features", "pricing", "blog", "workspace", "convert", "renamer", "compressor", "history", "bulk-renamer"]);
+const routes = new Set<AppRoute>(["home", "features", "pricing", "blog", "workspace", "renamer", "history", "bulk-renamer"]);
 
 function readRoute(): { route: AppRoute; docId?: number } {
   const hash = window.location.hash.replace(/^#\/?/, "");

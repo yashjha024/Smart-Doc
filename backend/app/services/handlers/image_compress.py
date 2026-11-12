@@ -43,10 +43,12 @@ class ImageCompressionHandler(BaseHandler):
         try:
             img = Image.open(source_path)
             img.load()
+        except Image.DecompressionBombError:
+            raise ValueError("This image is too large to process (over 100 megapixels).")
         except UnidentifiedImageError:
             raise ValueError("Invalid or corrupted image file.")
-        except Exception as e:
-            raise ValueError(f"Failed to read image: {str(e)}")
+        except Exception:
+            raise ValueError("This image could not be read. It may be damaged.")
             
         fmt = (img.format or "").upper()
         if fmt in ("MPO", "JPG"):  # MPO is how Pillow reports many phone-camera JPEGs

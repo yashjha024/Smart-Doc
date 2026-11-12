@@ -1,0 +1,19 @@
+# Secrets and local state must never be baked into the image
+.env
+.env.*
+!.env.example
+*.db
+local_data/
+
+# Local virtual environments and caches
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Dev-only files
+tests/
+test_*.py
+dummy*.pdf
+requirements-dev.txt

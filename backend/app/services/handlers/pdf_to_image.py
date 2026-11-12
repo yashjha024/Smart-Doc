@@ -23,6 +23,7 @@ FORMATS = {
     "webp": ("WEBP", "webp", "image/webp"),
 }
 MIN_DPI, MAX_DPI, DEFAULT_DPI = 72, 300, 150
+MAX_PAGES = 200
 
 
 class PdfToImageHandler(BaseHandler):
@@ -63,6 +64,8 @@ class PdfToImageHandler(BaseHandler):
         with doc:
             if len(doc) == 0:
                 raise ValueError("This PDF has no pages.")
+            if len(doc) > MAX_PAGES:
+                raise ValueError(f"This PDF has {len(doc)} pages. Converting is limited to {MAX_PAGES} pages; split it first.")
 
             def render(page_index: int) -> bytes:
                 pix = doc.load_page(page_index).get_pixmap(dpi=dpi, alpha=False)

@@ -26,25 +26,20 @@ function BlogPage() {
 export function App() {
   const { route, navigate } = useHashRoute();
   
-  // Theme logic
-  const [isDark, setIsDark] = useState(true);
-  
-  useEffect(() => {
-    const isSysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const stored = localStorage.getItem("fc-theme");
-    const d = stored === "dark" || (!stored && isSysDark);
-    setIsDark(d);
-    document.documentElement.classList.toggle("dark", d);
-  }, []);
+  // Theme: index.html sets the .dark class before first paint; read it from there.
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains("dark"));
 
   const toggleTheme = () => {
     setIsDark(prev => {
       const n = !prev;
-      localStorage.setItem("fc-theme", n ? "dark" : "light");
+      try { localStorage.setItem("fc-theme", n ? "dark" : "light"); } catch { /* storage blocked */ }
       document.documentElement.classList.toggle("dark", n);
       return n;
     });
   };
+
+  // New page → start at the top (hash navigation doesn't do this on its own).
+  useEffect(() => { window.scrollTo(0, 0); }, [route]);
 
   // Render logic based on route
   const renderPage = () => {

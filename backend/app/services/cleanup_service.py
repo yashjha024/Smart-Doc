@@ -1,17 +1,26 @@
-import threading
-import time
 import logging
-from datetime import datetime
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+import threading
+from datetime import datetime, timedelta
 
+from sqlalchemy import delete, select
+
+from app.core.config import settings
 from app.database.session import SessionLocal
+from app.models.compression_job import CompressionJob
+from app.models.detected_identifier import DetectedIdentifier
+from app.models.document import Document
 from app.models.file_record import FileRecord
+from app.models.ocr_result import OcrResult
+from app.models.processing_job import ProcessingJob
+from app.models.rename_history import RenameHistory
 from app.services.storage import get_storage_provider
 
 logger = logging.getLogger(__name__)
 
+
 class CleanupService:
+    """Deletes everything older than FILE_TTL_MINUTES: files, job rows and legacy DocRename data."""
+
     def __init__(self, interval_seconds: int = 600):
         self.interval_seconds = interval_seconds
         self._stop_event = threading.Event()
@@ -22,7 +31,7 @@ class CleanupService:
             self._stop_event.clear()
             self._thread = threading.Thread(target=self._run_loop, daemon=True)
             self._thread.start()
-            logger.info("Cleanup service started.")
+            logger.info("Cleanup service started (every %ss).", self.interval_seconds)
 
     def stop(self):
         self._stop_event.set()
@@ -34,37 +43,100 @@ class CleanupService:
         while not self._stop_event.is_set():
             try:
                 self.run_cleanup()
-            except Exception as e:
-                logger.error(f"Error during cleanup cycle: {e}")
-            
-            # Wait for interval or stop event
+            except Exception:
+                logger.exception("Error during cleanup cycle")
             self._stop_event.wait(self.interval_seconds)
 
-    def run_cleanup(self):
-        """Finds expired files, deletes them from storage, and removes their database records."""
+    def run_cleanup(self) -> dict:
+        now = datetime.utcnow()
+        cutoff = now - timedelta(minutes=settings.file_ttl_minutes)
+        stats = {
+            "files": self._expired_file_records(now),
+            "jobs": self._expired_jobs(now),
+            "documents": self._expired_legacy_documents(cutoff),
+            "stray_files": self._stray_files(cutoff),
+        }
+        if any(stats.values()):
+            logger.info("Cleanup removed %s", stats)
+        return stats
+
+    @staticmethod
+    def _expired_file_records(now: datetime) -> int:
         storage = get_storage_provider()
-        
+        removed = 0
         with SessionLocal() as db:
-            now = datetime.utcnow()
-            statement = select(FileRecord).where(FileRecord.expires_at <= now)
-            expired_files = list(db.scalars(statement).all())
-            
-            if not expired_files:
-                return
-
-            logger.info(f"Found {len(expired_files)} expired files to clean up.")
-            
-            for file_record in expired_files:
+            for record in db.scalars(select(FileRecord).where(FileRecord.expires_at <= now)).all():
                 try:
-                    # 1. Delete from storage
-                    storage.delete(file_record.stored_reference)
-                    
-                    # 2. Delete from DB
-                    db.delete(file_record)
+                    storage.delete(record.stored_reference)
+                    db.delete(record)
                     db.commit()
-                except Exception as e:
+                    removed += 1
+                except Exception:
                     db.rollback()
-                    logger.error(f"Failed to clean up file record {file_record.id}: {e}")
+                    logger.exception("Failed to clean up file record %s", record.id)
+        return removed
 
-# Global instance
-cleanup_service = CleanupService(interval_seconds=600)  # Runs every 10 minutes by default
+    @staticmethod
+    def _expired_jobs(now: datetime) -> int:
+        with SessionLocal() as db:
+            result = db.execute(
+                delete(ProcessingJob).where(
+                    ProcessingJob.expires_at <= now,
+                    ProcessingJob.status.in_(["completed", "failed"]),
+                )
+            )
+            db.commit()
+            return result.rowcount or 0
+
+    @staticmethod
+    def _expired_legacy_documents(cutoff: datetime) -> int:
+        """Old DocRename uploads: delete the document, its related rows and its file."""
+        removed = 0
+        with SessionLocal() as db:
+            docs = db.scalars(select(Document).where(Document.created_at <= cutoff)).all()
+            for doc in docs:
+                try:
+                    for model in (OcrResult, DetectedIdentifier, RenameHistory, CompressionJob):
+                        db.execute(delete(model).where(model.document_id == doc.id))
+                    path = settings.upload_dir / doc.stored_filename
+                    if path.is_file() and path.resolve().parent == settings.upload_dir.resolve():
+                        path.unlink()
+                    db.delete(doc)
+                    db.commit()
+                    removed += 1
+                except Exception:
+                    db.rollback()
+                    logger.exception("Failed to clean up document %s", doc.id)
+        return removed
+
+    @staticmethod
+    def _stray_files(cutoff: datetime) -> int:
+        """Files on disk with no row pointing at them (legacy outputs, temp files, orphans)."""
+        cutoff_ts = cutoff.timestamp()
+        with SessionLocal() as db:
+            live_refs = set(db.scalars(select(FileRecord.stored_reference)).all())
+            live_uploads = set(db.scalars(select(Document.stored_filename)).all())
+
+        removed = 0
+        folders = [
+            (settings.storage_root / "files", live_refs),
+            (settings.upload_dir, live_uploads),
+            (settings.output_dir, set()),
+            (settings.temp_dir, set()),
+        ]
+        for folder, keep in folders:
+            if not folder.exists():
+                continue
+            for path in folder.rglob("*"):
+                if not path.is_file() or path.name in keep:
+                    continue
+                try:
+                    if path.stat().st_mtime <= cutoff_ts:
+                        path.unlink()
+                        removed += 1
+                except OSError:
+                    logger.warning("Could not delete %s", path)
+        return removed
+
+
+cleanup_service = CleanupService(interval_seconds=600)

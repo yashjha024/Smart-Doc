@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -106,11 +108,12 @@ class BulkRenameService:
                 status="failed",
                 error=detail,
             )
-        except Exception as exc:
+        except Exception:
+            logging.getLogger(__name__).exception("Bulk rename failed for document %s", document_id)
             return BulkRenameItemResult(
                 document_id=document_id,
                 status="failed",
-                error=str(exc),
+                error="Rename failed for this file.",
             )
 
     def _resolve_template_values(self, document_id: int, template: str) -> dict[str, str]:

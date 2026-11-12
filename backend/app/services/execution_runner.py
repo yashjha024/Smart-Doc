@@ -1,49 +1,51 @@
-import threading
 import logging
+import os
 import traceback
-from typing import Callable, Any
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from typing import Any, Callable
+
+from sqlalchemy import update
 
 from app.database.session import SessionLocal
+from app.models.processing_job import ProcessingJob
 from app.services.job_service import JobService
 
 logger = logging.getLogger(__name__)
 
+# A small fixed pool: PDF/image work is CPU- and memory-heavy, so running every
+# job at once would just make them all slow (and risk running out of memory).
+MAX_WORKERS = int(os.environ.get("JOB_WORKERS", "3"))
+_executor = ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix="job")
+
+
 class ExecutionRunner:
     """
-    Abstracts execution to allow seamless transition to Celery/Redis in the future.
-    Currently executes tasks in a background thread to prevent blocking the API.
+    Runs jobs on a bounded background thread pool.
+    Kept behind this class so it can later move to a real queue (or run inline on serverless).
     """
-    
+
     @staticmethod
     def dispatch(job_id: str, handler_func: Callable[[str, Any], dict], *args, **kwargs):
         """
-        Dispatches a job to be processed.
-        handler_func should take (job_id, db_session) and return a dict with {"output_files": [...], "metadata": {...}}
-        or raise an exception on failure.
+        handler_func takes (job_id, db_session) and returns {"output_files": [...], "metadata": {...}},
+        or raises (ValueError for user-facing problems).
         """
-        # Update status to validating/processing
         with SessionLocal() as db:
-            job_service = JobService(db)
-            job_service.update_job_status(job_id, "processing")
-            
-        # Submit to background execution
-        thread = threading.Thread(
-            target=ExecutionRunner._execute,
-            args=(job_id, handler_func) + args,
-            kwargs=kwargs,
-            daemon=True
-        )
-        thread.start()
-        
+            JobService(db).update_job_status(job_id, "processing")
+        _executor.submit(ExecutionRunner._execute, job_id, handler_func, *args, **kwargs)
+
     @staticmethod
     def _execute(job_id: str, handler_func: Callable, *args, **kwargs):
         with SessionLocal() as db:
             job_service = JobService(db)
             try:
                 result = handler_func(job_id, db, *args, **kwargs)
-                output_files = result.get("output_files")
-                result_metadata = result.get("metadata")
-                job_service.update_job_status(job_id, "completed", output_files=output_files, result_metadata=result_metadata)
+                job_service.update_job_status(
+                    job_id, "completed",
+                    output_files=result.get("output_files"),
+                    result_metadata=result.get("metadata"),
+                )
             except Exception as e:
                 logger.error(f"Job {job_id} failed: {traceback.format_exc()}")
                 db.rollback()
@@ -54,3 +56,22 @@ class ExecutionRunner:
                     job_service.update_job_status(job_id, "failed", error_info=message)
                 except Exception:
                     logger.error(f"Could not mark job {job_id} as failed: {traceback.format_exc()}")
+
+    @staticmethod
+    def fail_interrupted_jobs() -> int:
+        """At startup, any job still 'created'/'processing' was cut off by a restart."""
+        with SessionLocal() as db:
+            result = db.execute(
+                update(ProcessingJob)
+                .where(ProcessingJob.status.in_(["created", "processing"]))
+                .values(
+                    status="failed",
+                    error_information="The server restarted while this file was processing. Please try again.",
+                    completed_at=datetime.utcnow(),
+                )
+            )
+            db.commit()
+            count = result.rowcount or 0
+        if count:
+            logger.warning("Marked %s interrupted job(s) as failed.", count)
+        return count

@@ -1,3 +1,4 @@
+import logging
 import tempfile
 import zipfile
 from pathlib import Path
@@ -10,6 +11,8 @@ from sqlalchemy.orm import Session
 from app.models.document import Document
 from app.services.document_service import DocumentService
 from app.utils.file_storage import get_output_path, get_upload_path
+
+logger = logging.getLogger(__name__)
 from app.utils.filename import sanitize_filename
 
 class ConvertService:
@@ -77,10 +80,11 @@ class ConvertService:
                         zf.writestr(f"{source_stem}_page_{page_num+1}.{img_format}", img_bytes)
                 return zip_filename
 
-        except Exception as exc:
+        except Exception:
+            logger.exception("PDF to image conversion failed")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to convert PDF to {img_format.upper()}: {str(exc)}"
+                detail=f"Failed to convert PDF to {img_format.upper()}."
             )
 
     def _convert_image_to_pdf(self, source_path: Path, stored_filename: str) -> str:
@@ -99,8 +103,9 @@ class ConvertService:
             doc.save(str(out_path))
             return out_filename
             
-        except Exception as exc:
+        except Exception:
+            logger.exception("Image to PDF conversion failed")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to convert image to PDF: {str(exc)}"
+                detail="Failed to convert image to PDF."
             )

@@ -10,14 +10,17 @@ class Base(DeclarativeBase):
     pass
 
 
-engine_kwargs = {}
-if settings.database_url.startswith("sqlite"):
-    engine_kwargs["connect_args"] = {"check_same_thread": False}
+database_url = settings.database_url
+if database_url.startswith("postgres://"):
+    # SQLAlchemy 2 only accepts the postgresql:// scheme (Supabase/Heroku hand out postgres://).
+    database_url = "postgresql://" + database_url[len("postgres://"):]
 
-engine = create_engine(
-    settings.database_url,
-    **engine_kwargs
-)
+engine_kwargs = {"pool_pre_ping": True}
+if database_url.startswith("sqlite"):
+    # Worker threads write concurrently; wait for the lock instead of failing.
+    engine_kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
+
+engine = create_engine(database_url, **engine_kwargs)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

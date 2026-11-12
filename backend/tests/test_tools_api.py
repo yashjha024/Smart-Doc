@@ -155,8 +155,15 @@ def test_image_convert(client, src_fmt, src_name, target, magic):
     assert download(client, job["output_files"][0]).startswith(magic)
 
 
-def test_bad_pdf_gives_readable_error(client):
-    ref = upload(client, "fake.pdf", b"this is not a pdf")
+def test_upload_rejects_content_that_does_not_match_extension(client):
+    res = client.post("/api/files/upload", files={"file": ("fake.pdf", b"this is not a pdf")})
+    assert res.status_code == 400
+    assert "doesn't look like" in res.json()["detail"]
+
+
+def test_broken_pdf_gives_readable_error(client):
+    ref = upload(client, "broken.pdf", b"%PDF-1.4\nthis is not really a pdf")
     job = run_job(client, "pdf-to-jpg", [ref], {"format": "jpg"})
     assert job["status"] == "failed"
     assert "PDF" in job["error_information"]
+    assert "Traceback" not in job["error_information"]
