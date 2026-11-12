@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Upload, ChevronRight, Download, RefreshCw, X, Check } from "lucide-react";
 import { toast } from "sonner";
@@ -16,8 +16,10 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
   const [step, setStep] = useState<WorkStep>("upload");
   const [files, setFiles] = useState<MockFile[]>([]);
   const [config, setConfig] = useState<Record<string, any>>({});
-  const [jobId, setJobId] = useState<string | null>(null);
+  const [mergeResult, setMergeResult] = useState<{ outputRef: string; name: string } | null>(null);
   const [jobError, setJobError] = useState<string | null>(null);
+  const filesRef = useRef<MockFile[]>(files);
+  filesRef.current = files;
 
   // Initialize config
   useEffect(() => {
@@ -26,11 +28,11 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
     setConfig(initConf);
     setStep("upload");
     setFiles([]);
-    setJobId(null);
+    setMergeResult(null);
     setJobError(null);
   }, [tool]);
 
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUploadClick = () => {
     if (fileInputRef.current) {
@@ -54,26 +56,39 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
     }
   };
 
-  const addFiles = async (newFiles: File[]) => {
-    const newItems: MockFile[] = newFiles.map(f => ({
-      id: Math.random().toString(36).substring(7),
+  const addFiles = async (incoming: File[]) => {
+    // Dropped files bypass the input's accept filter, so check extensions here too.
+    const allowed = tool.accepts === "*" ? null : tool.accepts.split(",").map(s => s.trim().toLowerCase());
+    const accepted = allowed ? incoming.filter(f => allowed.some(ext => f.name.toLowerCase().endsWith(ext))) : incoming;
+    const rejected = incoming.length - accepted.length;
+    if (rejected > 0) toast.error(`${rejected} file${rejected > 1 ? "s" : ""} skipped — ${tool.name} accepts ${tool.accepts.replace(/,/g, ", ")}`);
+    if (accepted.length === 0) return;
+
+    const newItems: MockFile[] = accepted.map(f => ({
+      id: Math.random().toString(36).substring(2, 10),
       name: f.name,
       originalSize: f.size,
       status: "processing",
     }));
-    
+
     setFiles(prev => [...prev, ...newItems]);
     setStep("options");
-    
-    // Upload files immediately
-    for (let i = 0; i < newFiles.length; i++) {
+
+    for (let i = 0; i < accepted.length; i++) {
         try {
-            const res = await api.uploadFile(newFiles[i]);
-            setFiles(prev => prev.map(f => f.id === newItems[i].id ? { ...f, status: "idle", id: res.file_id } : f));
+            const res = await api.uploadFile(accepted[i]);
+            setFiles(prev => prev.map(f => f.id === newItems[i].id ? { ...f, status: "idle", fileRef: res.file_id } : f));
         } catch (err: any) {
-            setFiles(prev => prev.map(f => f.id === newItems[i].id ? { ...f, status: "error", errorMsg: "Upload failed" } : f));
+            setFiles(prev => prev.map(f => f.id === newItems[i].id ? { ...f, status: "error", errorMsg: err?.message || "Upload failed" } : f));
         }
     }
+  };
+
+  const resetWorkspace = () => {
+    setFiles([]);
+    setMergeResult(null);
+    setJobError(null);
+    setStep("upload");
   };
 
   const removeFile = (id: string) => {
@@ -102,73 +117,143 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
     });
   };
 
+  const isMerge = tool.id === "merge-pdf";
+
   const startJob = async () => {
-    const validFiles = files.filter(f => f.status === "idle" && f.id);
-    if (validFiles.length === 0) {
+    const ready = files.filter(f => f.status === "idle" && f.fileRef);
+    if (ready.length === 0) {
         toast.error("No valid files to process");
         return;
     }
-    
-    setStep("processing");
-    setFiles(prev => prev.map(f => ({ ...f, status: "processing" })));
-    setJobError(null);
-    
-    let finalConfig = { ...config };
-    
-    // Parse ranges for PDF split
-    if (tool.id === "split-pdf" && finalConfig.ranges) {
-        const parts = finalConfig.ranges.split(",").map((s: string) => s.trim()).filter(Boolean);
+    if (isMerge && ready.length < 2) {
+        toast.error("Add at least two PDFs to merge.");
+        return;
+    }
+
+    // Validate options before switching to the processing state.
+    const finalConfig: Record<string, any> = { ...config };
+    if (tool.id === "split-pdf") {
+        const parts = String(finalConfig.ranges || "").split(",").map((s: string) => s.trim()).filter(Boolean);
         if (parts.length === 0) {
-            toast.error("Please enter a valid page range.");
+            toast.error("Enter the pages to keep, e.g. 1-3, 5");
             return;
         }
         finalConfig.ranges = parts;
     }
-    
+
+    setJobError(null);
+    setMergeResult(null);
+    setStep("processing");
+    // Drop files that failed to upload; they can't be processed.
+    setFiles(prev => prev.filter(f => f.status !== "error").map(f => ({ ...f, status: "processing", errorMsg: undefined })));
+
+    const create = (inputRefs: string[]) => api.createJob({ tool_id: tool.id, input_files: inputRefs, configuration: finalConfig });
+
+    if (isMerge) {
+        try {
+            const job = await create(ready.map(f => f.fileRef!));
+            setFiles(prev => prev.map(f => ({ ...f, jobId: job.id })));
+        } catch (err: any) {
+            failAll(err?.message || "Failed to start job");
+        }
+        return;
+    }
+
+    // Single-file tools: one job per file so each gets its own result.
+    await Promise.all(ready.map(async f => {
+        try {
+            const job = await create([f.fileRef!]);
+            setFiles(prev => prev.map(p => p.id === f.id ? { ...p, jobId: job.id } : p));
+        } catch (err: any) {
+            setFiles(prev => prev.map(p => p.id === f.id ? { ...p, status: "error", errorMsg: err?.message || "Failed to start" } : p));
+        }
+    }));
+  };
+
+  const failAll = (message: string) => {
+    setJobError(message);
+    setFiles(prev => prev.map(f => ({ ...f, status: "error", errorMsg: undefined })));
+    setStep("error");
+  };
+
+  // Poll every pending job until it finishes, with an overall timeout.
+  useEffect(() => {
+    if (step !== "processing") return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const startedAt = Date.now();
+    const TIMEOUT_MS = 5 * 60 * 1000;
+    let consecutiveErrors = 0;
+
+    const tick = async () => {
+      if (cancelled) return;
+      const current = filesRef.current;
+      const pendingJobIds = [...new Set(current.filter(f => f.status === "processing" && f.jobId).map(f => f.jobId!))];
+
+      if (pendingJobIds.length > 0) {
+        try {
+          const jobs = await Promise.all(pendingJobIds.map(id => api.getJob(id)));
+          consecutiveErrors = 0;
+          if (cancelled) return;
+          for (const job of jobs) {
+            if (job.status === "completed") {
+              if (isMerge) {
+                setMergeResult({ outputRef: job.output_files[0], name: "merged.pdf" });
+              }
+              setFiles(prev => prev.map(f => f.jobId === job.id ? {
+                ...f, status: "success", outputRef: isMerge ? undefined : job.output_files[0], result_metadata: job.result_metadata,
+              } : f));
+            } else if (job.status === "failed") {
+              const msg = job.error_information || "Processing failed";
+              if (isMerge) { failAll(msg); return; }
+              setFiles(prev => prev.map(f => f.jobId === job.id ? { ...f, status: "error", errorMsg: msg } : f));
+            }
+          }
+        } catch {
+          consecutiveErrors += 1;
+          if (consecutiveErrors >= 5) { failAll("Lost connection to the server. Please try again."); return; }
+        }
+      }
+
+      if (Date.now() - startedAt > TIMEOUT_MS) {
+        failAll("This is taking too long. Please try again with a smaller file.");
+        return;
+      }
+      timer = setTimeout(tick, 1000);
+    };
+
+    timer = setTimeout(tick, 500);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [step, isMerge]);
+
+  // Move to done/error once nothing is processing any more.
+  useEffect(() => {
+    if (step !== "processing" || files.length === 0) return;
+    if (files.some(f => f.status === "processing")) return;
+    const succeeded = files.filter(f => f.status === "success").length;
+    if (succeeded > 0) {
+      setStep("done");
+    } else {
+      setJobError(files.find(f => f.errorMsg)?.errorMsg || "Processing failed");
+      setStep("error");
+    }
+  }, [files, step]);
+
+  const saveOutput = async (outputRef: string | undefined, fallbackName: string) => {
+    if (!outputRef) return;
     try {
-        const payload = {
-            tool_id: tool.id,
-            input_files: validFiles.map(f => f.id),
-            configuration: finalConfig
-        };
-        const job = await api.createJob(payload);
-        setJobId(job.id);
+      await api.saveFile(outputRef, fallbackName);
     } catch (err: any) {
-        setStep("error");
-        setJobError(err.message || "Failed to start job");
-        setFiles(prev => prev.map(f => ({ ...f, status: "error", errorMsg: "Job failed" })));
+      toast.error(err?.message || "Download failed");
     }
   };
 
-  useEffect(() => {
-    if (step === "processing" && jobId) {
-      const interval = setInterval(async () => {
-        try {
-            const job = await api.getJob(jobId);
-            if (job.status === "completed") {
-                clearInterval(interval);
-                setStep("done");
-                
-                // Assuming single output file for simplicity right now unless we have more
-                setFiles(prev => prev.map((f, idx) => ({ 
-                    ...f, 
-                    status: "success", 
-                    id: job.output_files[idx] || job.output_files[0] || f.id, 
-                    result_metadata: job.result_metadata 
-                })));
-            } else if (job.status === "failed") {
-                clearInterval(interval);
-                setStep("error");
-                setJobError(job.error_information || "Processing failed");
-                setFiles(prev => prev.map(f => ({ ...f, status: "error" })));
-            }
-        } catch (err) {
-            console.error("Polling error", err);
-        }
-      }, 1000);
-      return () => clearInterval(interval);
+  const downloadAll = async () => {
+    if (mergeResult) { await saveOutput(mergeResult.outputRef, mergeResult.name); return; }
+    for (const f of files.filter(f => f.status === "success" && f.outputRef)) {
+      await saveOutput(f.outputRef, f.name);
     }
-  }, [step, jobId]);
+  };
 
   const ta = {
     amber: { icon: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/25", dot: "bg-amber-500" },
@@ -176,7 +261,11 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
     teal:  { icon: "text-teal-600 dark:text-teal-400",   bg: "bg-teal-500/10",  border: "border-teal-500/25", dot: "bg-teal-500" },
   }[tool.accent];
 
-  const canStart = files.length > 0 && files.every(f => f.status === "idle");
+  const idleCount = files.filter(f => f.status === "idle").length;
+  const canStart = !files.some(f => f.status === "processing") && idleCount >= (isMerge ? 2 : 1);
+  const successFiles = files.filter(f => f.status === "success");
+  const failedCount = files.filter(f => f.status === "error").length;
+  const singleOutputFormat = successFiles[0]?.result_metadata?.tool_specific?.output_format;
   const overallSavings = files.reduce((acc, f) => acc + (f.result_metadata?.metrics?.savings_bytes || 0), 0);
   const totalOriginal = files.reduce((acc, f) => acc + f.originalSize, 0);
   const overallPct = totalOriginal > 0 ? ((overallSavings / totalOriginal) * 100).toFixed(0) : 0;
@@ -228,7 +317,7 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
                   <div className="flex flex-col">
                     <AnimatePresence>
                       {files.map((f, idx) => (
-                        <FileItem key={f.id} file={f} tool={tool} onRemove={step === "options" ? removeFile : undefined} showResult={step === "done"} progress={f.status === "processing" ? 75 : undefined} showReorder={tool.id === "merge-pdf" && step === "options" && files.length > 1} onMoveUp={idx > 0 ? () => moveFileUp(idx) : undefined} onMoveDown={idx < files.length - 1 ? () => moveFileDown(idx) : undefined} />
+                        <FileItem key={f.id} file={f} tool={tool} onRemove={step === "options" ? removeFile : undefined} showResult={step === "done"} onDownload={step === "done" && f.outputRef ? () => saveOutput(f.outputRef, f.name) : undefined} showReorder={isMerge && step === "options" && files.length > 1} onMoveUp={idx > 0 ? () => moveFileUp(idx) : undefined} onMoveDown={idx < files.length - 1 ? () => moveFileDown(idx) : undefined} />
                       ))}
                     </AnimatePresence>
                   </div>
@@ -240,15 +329,12 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
                     <h3 className="text-xl font-semibold text-foreground mb-1" style={{ fontFamily: "var(--font-display)" }}>All done!</h3>
                     <p className="text-sm text-teal-700 dark:text-teal-300 mb-6">
                         {overallSavings > 0 ? `Saved ${formatBytes(overallSavings)} (${overallPct}% smaller). ` : ""}
-                        Your files are ready to download.
+                        {mergeResult ? "Your merged PDF is ready." : successFiles.length > 1 ? `${successFiles.length} files are ready to download.` : "Your file is ready to download."}
+                        {failedCount > 0 && <span className="block text-destructive mt-1">{failedCount} file{failedCount > 1 ? "s" : ""} could not be processed.</span>}
                     </p>
-                    <div className="flex gap-3">
-                      <Btn v="primary" sz="md" onClick={() => {
-                        // For simplicity, download first file if single, or zip if multiple
-                        const f = files[0];
-                        if (f && f.id) window.location.href = api.downloadFile(f.id);
-                      }}><Download size={16} /> Download {files[0]?.result_metadata?.tool_specific?.output_format === "zip" ? "ZIP" : "File"}</Btn>
-                      <Btn v="secondary" sz="md" onClick={() => setStep("upload")}><RefreshCw size={16} /> Start over</Btn>
+                    <div className="flex flex-wrap justify-center gap-3">
+                      <Btn v="primary" sz="md" onClick={downloadAll}><Download size={16} /> {mergeResult ? "Download merged PDF" : successFiles.length > 1 ? `Download all (${successFiles.length})` : `Download ${singleOutputFormat === "zip" ? "ZIP" : "file"}`}</Btn>
+                      <Btn v="secondary" sz="md" onClick={resetWorkspace}><RefreshCw size={16} /> Start over</Btn>
                     </div>
                   </motion.div>
                 )}
@@ -258,7 +344,7 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
                     <div className="w-12 h-12 rounded-full bg-destructive/20 text-destructive flex items-center justify-center mb-3"><X size={24} /></div>
                     <h3 className="text-xl font-semibold text-foreground mb-1" style={{ fontFamily: "var(--font-display)" }}>Processing Failed</h3>
                     <p className="text-sm text-destructive mb-6">{jobError}</p>
-                    <Btn v="secondary" sz="md" onClick={() => setStep("upload")}><RefreshCw size={16} /> Try again</Btn>
+                    <Btn v="secondary" sz="md" onClick={resetWorkspace}><RefreshCw size={16} /> Try again</Btn>
                   </motion.div>
                 )}
               </div>
@@ -292,9 +378,9 @@ export function ToolWorkspacePage({ tool, onNav }: { tool: ToolDef; onNav: (p: A
                       )}
                       {opt.type === "slider" && (
                         <div className="px-1">
-                          <input type="range" min={opt.min} max={opt.max} step={opt.step} value={config[opt.id]} onChange={e => setConfig(p => ({ ...p, [opt.id]: parseInt(e.target.value) }))} className="w-full accent-primary" />
+                          <input type="range" min={opt.min} max={opt.max} step={opt.step} value={config[opt.id] ?? opt.defaultValue} onChange={e => setConfig(p => ({ ...p, [opt.id]: parseInt(e.target.value) }))} className="w-full accent-primary" />
                           <div className="flex justify-between mt-1 text-xs text-muted-foreground font-mono">
-                            <span>{config[opt.id]}{opt.unit}</span>
+                            <span>{config[opt.id] ?? opt.defaultValue}{opt.unit}</span>
                           </div>
                         </div>
                       )}

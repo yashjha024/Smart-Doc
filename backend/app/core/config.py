@@ -1,8 +1,10 @@
 from functools import lru_cache
 from pathlib import Path
 
+from typing import Annotated
+
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -11,7 +13,8 @@ class Settings(BaseSettings):
     environment: str = "development"
     database_url: str = "sqlite:///./docrename.db"
     storage_root: Path = Field(default=Path("local_data"))
-    cors_origins: list[str] = ["http://127.0.0.1:5173", "http://localhost:5173"]
+    # NoDecode: accept a plain comma-separated env value instead of requiring JSON.
+    cors_origins: Annotated[list[str], NoDecode] = ["http://127.0.0.1:5173", "http://localhost:5173"]
     file_ttl_minutes: int = 60
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")

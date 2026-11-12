@@ -49,6 +49,8 @@ class ImageCompressionHandler(BaseHandler):
             raise ValueError(f"Failed to read image: {str(e)}")
             
         fmt = (img.format or "").upper()
+        if fmt in ("MPO", "JPG"):  # MPO is how Pillow reports many phone-camera JPEGs
+            fmt = "JPEG"
         if fmt not in cls.SUPPORTED_FORMATS:
             raise ValueError(f"Unsupported image format: {fmt}")
             
@@ -76,7 +78,7 @@ class ImageCompressionHandler(BaseHandler):
                     cl = int(9 - ((q - 1) / 99) * 9)
                     save_kwargs["compress_level"] = max(0, min(9, cl))
                     
-            if out_fmt == "JPEG" and img.mode in ("RGBA", "P"):
+            if out_fmt == "JPEG" and img.mode not in ("RGB", "L", "CMYK"):
                 converted = img.convert("RGB")
                 converted.save(buf, format="JPEG", **save_kwargs)
             else:

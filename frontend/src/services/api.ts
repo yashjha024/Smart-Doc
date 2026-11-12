@@ -129,5 +129,34 @@ export const api = {
 
   getJob: (jobId: string) => request<any>(`/jobs/${jobId}`),
 
-  downloadFile: (fileId: string) => `${API_BASE_URL}/files/${fileId}/download`,
+  downloadFile: (fileId: string) => `${API_BASE_URL}/files/${encodeURIComponent(fileId)}/download`,
+
+  /** Fetches a processed file and saves it with the server-provided name. Throws a readable error on 404/410. */
+  saveFile: async (fileId: string, fallbackName: string) => {
+    const response = await fetch(`${API_BASE_URL}/files/${encodeURIComponent(fileId)}/download`);
+    if (!response.ok) {
+      if (response.status === 410) throw new Error("This file has expired. Please process it again.");
+      throw new Error(await readError(response));
+    }
+    const blob = await response.blob();
+    const name = filenameFromDisposition(response.headers.get("Content-Disposition")) ?? fallbackName;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
 };
+
+function filenameFromDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const star = header.match(/filename\*=(?:UTF-8'')?([^;]+)/i);
+  if (star) {
+    try { return decodeURIComponent(star[1].trim().replace(/^"|"$/g, "")); } catch { /* fall through */ }
+  }
+  const plain = header.match(/filename="?([^";]+)"?/i);
+  return plain ? plain[1] : null;
+}

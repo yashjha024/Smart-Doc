@@ -18,7 +18,7 @@ class ExecutionRunner:
     def dispatch(job_id: str, handler_func: Callable[[str, Any], dict], *args, **kwargs):
         """
         Dispatches a job to be processed.
-        handler_func should take (job_id, db_session) and return a dict with {"output_reference": "..."}
+        handler_func should take (job_id, db_session) and return a dict with {"output_files": [...], "metadata": {...}}
         or raise an exception on failure.
         """
         # Update status to validating/processing
@@ -46,4 +46,11 @@ class ExecutionRunner:
                 job_service.update_job_status(job_id, "completed", output_files=output_files, result_metadata=result_metadata)
             except Exception as e:
                 logger.error(f"Job {job_id} failed: {traceback.format_exc()}")
-                job_service.update_job_status(job_id, "failed", error_info=str(e))
+                db.rollback()
+                # Handlers raise ValueError with messages written for users; anything
+                # else may contain paths or internals, so show a generic message.
+                message = str(e) if isinstance(e, ValueError) else "Something went wrong while processing this file."
+                try:
+                    job_service.update_job_status(job_id, "failed", error_info=message)
+                except Exception:
+                    logger.error(f"Could not mark job {job_id} as failed: {traceback.format_exc()}")

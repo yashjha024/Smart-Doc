@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from uuid import uuid4
 import os
+import re
 import shutil
 
 from app.core.config import settings
@@ -39,7 +40,9 @@ class LocalVolumeProvider(StorageProvider):
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
     def put(self, file_bytes: bytes, original_filename: str) -> str:
-        safe_name = sanitize_filename(original_filename)
+        # References travel in URLs, so keep them to URL-safe characters.
+        # The original filename is kept on the FileRecord and used for downloads.
+        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", sanitize_filename(original_filename)).strip("_") or "file"
         reference = f"{uuid4().hex}_{safe_name}"
         path = self.base_dir / reference
         

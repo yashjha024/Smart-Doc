@@ -13,6 +13,7 @@ class BaseHandler(ABC):
     def execute(cls, job_id: str, db: Session, **kwargs) -> Dict[str, Any]:
         """
         Executes the processing task.
-        Returns a dictionary containing at least 'output_reference'.
+        Returns a dictionary with 'output_files' (list of stored references) and optional 'metadata'.
+        Raise ValueError with a user-readable message for bad input.
         """
         pass

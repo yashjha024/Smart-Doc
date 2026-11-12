@@ -14,7 +14,12 @@ router = APIRouter()
 def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
     storage = get_storage_provider()
     
+    if not file.filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A file name is required.")
+
     file_bytes = file.file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The uploaded file is empty.")
     stored_ref = storage.put(file_bytes, file.filename)
     
     ttl = timedelta(minutes=settings.file_ttl_minutes)
@@ -35,8 +40,11 @@ def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
 
 @router.get("/{file_id}/download")
 def download_file(file_id: str, db: Session = Depends(get_db)):
-    """Securely download a file by its record ID, verifying TTL expiration."""
-    file_record = db.get(FileRecord, file_id)
+    """Download a file by the reference returned from upload/jobs, verifying TTL expiration."""
+    file_record = (
+        db.query(FileRecord).filter(FileRecord.stored_reference == file_id).first()
+        or db.get(FileRecord, file_id)
+    )
     
     if not file_record:
         raise HTTPException(

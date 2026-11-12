@@ -1,6 +1,6 @@
 import React from "react";
 import { motion } from "motion/react";
-import { CheckCircle2, AlertCircle, X, ChevronUp, ChevronDown } from "lucide-react";
+import { CheckCircle2, AlertCircle, X, ChevronUp, ChevronDown, Download } from "lucide-react";
 import { ToolDef } from "../../config/tools";
 import { Badge } from "./Badge";
 import { formatBytes } from "../../utils/format";
@@ -14,12 +14,18 @@ const A: Record<string, { icon: string; bg: string; border: string; dot: string 
 export type FileItemStatus = "idle" | "processing" | "success" | "error";
 
 export interface MockFile {
+  /** Local id for React keys; never sent to the server. */
   id: string; name: string; originalSize: number;
   processedSize?: number; status: FileItemStatus; errorMsg?: string;
   result_metadata?: any;
+  /** Server reference returned by upload. */
+  fileRef?: string;
+  jobId?: string;
+  /** Server reference of the processed result. */
+  outputRef?: string;
 }
 
-export function FileItem({ file, tool, onRemove, showResult, progress, onMoveUp, onMoveDown, showReorder }: { file: MockFile; tool: ToolDef; onRemove?: (id: string) => void; showResult?: boolean; progress?: number; onMoveUp?: () => void; onMoveDown?: () => void; showReorder?: boolean }) {
+export function FileItem({ file, tool, onRemove, showResult, progress, onMoveUp, onMoveDown, showReorder, onDownload }: { file: MockFile; tool: ToolDef; onRemove?: (id: string) => void; showResult?: boolean; progress?: number; onMoveUp?: () => void; onMoveDown?: () => void; showReorder?: boolean; onDownload?: () => void }) {
   const fileExt = (name: string) => name.split(".").pop()?.toUpperCase() ?? "FILE";
   const ext = fileExt(file.name);
   const ta = A[tool.accent];
@@ -47,7 +53,7 @@ export function FileItem({ file, tool, onRemove, showResult, progress, onMoveUp,
         <p className="text-sm font-medium text-foreground truncate">{file.name}</p>
         <div className="flex items-center gap-2 mt-0.5" style={{ fontFamily: "var(--font-mono)" }}>
           <span className="text-xs text-muted-foreground">{formatBytes(file.originalSize)}</span>
-          {showResult && processed !== undefined && (<><span className="text-muted-foreground/40 text-xs">→</span><span className="text-xs text-teal-600 dark:text-teal-400">{formatBytes(processed)}</span>{pct && <Badge variant="success">-{pct}%</Badge>}</>)}
+          {showResult && (file.result_metadata?.metrics || file.processedSize !== undefined) && (<><span className="text-muted-foreground/40 text-xs">→</span><span className="text-xs text-teal-600 dark:text-teal-400">{formatBytes(processed)}</span>{Number(pct) > 0 && <Badge variant="success">-{pct}%</Badge>}</>)}
           {file.status === "error" && <span className="text-xs text-destructive">{file.errorMsg}</span>}
         </div>
         {file.status === "processing" && progress !== undefined && (
@@ -59,6 +65,9 @@ export function FileItem({ file, tool, onRemove, showResult, progress, onMoveUp,
       <div className="flex items-center gap-1 flex-shrink-0">
         {file.status === "processing" && <svg className="w-4 h-4 animate-spin text-primary" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.2" /><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>}
         {file.status === "success" && <CheckCircle2 size={14} className="text-teal-600 dark:text-teal-400" />}
+        {file.status === "success" && onDownload && (
+          <button onClick={onDownload} aria-label={`Download ${file.name}`} className="ml-1 h-7 px-2.5 rounded-md text-xs font-medium flex items-center gap-1 text-primary hover:bg-primary/10 transition-colors"><Download size={12} /> Save</button>
+        )}
         {file.status === "error" && <AlertCircle size={14} className="text-destructive" />}
         {onRemove && file.status !== "processing" && (
           <button onClick={() => onRemove(file.id)} className="w-6 h-6 rounded-md hover:bg-foreground/[0.07] flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"><X size={11} /></button>

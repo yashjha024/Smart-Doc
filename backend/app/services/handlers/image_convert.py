@@ -15,7 +15,8 @@ from app.utils.filename import sanitize_filename
 
 class ImageConversionHandler(BaseHandler):
     # Supported input formats map to their PIL format strings
-    SUPPORTED_INPUT_FORMATS = {"JPEG", "JPG", "PNG", "WEBP"}
+    # MPO is how Pillow reports many phone-camera JPEGs.
+    SUPPORTED_INPUT_FORMATS = {"JPEG", "JPG", "MPO", "PNG", "WEBP", "GIF", "BMP", "TIFF"}
     # Supported output formats map to their PIL format strings
     SUPPORTED_OUTPUT_FORMATS = {"JPEG", "JPG", "PNG", "WEBP"}
 
@@ -56,6 +57,8 @@ class ImageConversionHandler(BaseHandler):
             raise ValueError(f"Failed to read image: {str(e)}")
             
         fmt = (img.format or "").upper()
+        if fmt in ("MPO", "JPG"):
+            fmt = "JPEG"
         if fmt not in cls.SUPPORTED_INPUT_FORMATS:
             raise ValueError(f"Unsupported input image format: {fmt}")
             
@@ -74,6 +77,9 @@ class ImageConversionHandler(BaseHandler):
             img = background
         elif img.mode != "RGB" and target_format == "JPEG":
             img = img.convert("RGB")
+        elif img.mode not in ("RGB", "RGBA", "L", "LA", "P"):
+            # e.g. CMYK or 16-bit TIFFs, which PNG/WebP can't store directly
+            img = img.convert("RGBA" if "A" in img.getbands() else "RGB")
             
         buf = io.BytesIO()
         img.save(buf, format=target_format)
