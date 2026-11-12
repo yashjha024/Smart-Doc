@@ -1,31 +1,19 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Toaster } from "sonner";
 import { Navbar } from "./components/ui/Navbar";
 import { Footer } from "./components/ui/Footer";
 import { HomePage } from "./pages/HomePage";
 import { ToolWorkspacePage } from "./pages/ToolWorkspacePage";
 import { BulkRenamerPage } from "./pages/BulkRenamerPage";
-import { HistoryPage } from "./pages/HistoryPage";
-import { RenamerPage } from "./pages/RenamerPage";
-import { WorkspacePage } from "./pages/WorkspacePage";
+import { FeaturesPage } from "./pages/FeaturesPage";
+import { PricingPage } from "./pages/PricingPage";
+import { BlogPage, BlogPostPage } from "./pages/BlogPage";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { TOOLS } from "./config/tools";
-import type { AppRoute } from "./types/navigation";
-
-// Temporary placeholder pages
-function FeaturesPage() {
-  return <div className="min-h-screen flex items-center justify-center pt-16"><h1>Features - Coming Soon</h1></div>;
-}
-function PricingPage() {
-  return <div className="min-h-screen flex items-center justify-center pt-16"><h1>Pricing - Coming Soon</h1></div>;
-}
-function BlogPage() {
-  return <div className="min-h-screen flex items-center justify-center pt-16"><h1>Blog - Coming Soon</h1></div>;
-}
 
 export function App() {
   const { route, navigate } = useHashRoute();
-  
+
   // Theme: index.html sets the .dark class before first paint; read it from there.
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains("dark"));
 
@@ -41,45 +29,31 @@ export function App() {
   // New page → start at the top (hash navigation doesn't do this on its own).
   useEffect(() => { window.scrollTo(0, 0); }, [route]);
 
-  // Render logic based on route
+  const isWorkspace = route.startsWith("workspace/");
+
   const renderPage = () => {
-    if (route === "home" || route === "") {
-      return <HomePage onSelect={(t) => navigate(`workspace/${t.id}` as any)} onNav={navigate} />;
-    } else if (route === "features") {
-      return <FeaturesPage />;
-    } else if (route === "pricing") {
-      return <PricingPage />;
-    } else if (route === "blog") {
-      return <BlogPage />;
-    } else if (route === "history") {
-      return <HistoryPage />;
-    } else if (route === "renamer") {
-      return <RenamerPage />;
-    } else if (route === "bulk-renamer") {
-      return <BulkRenamerPage />;
-    } else if (route === "workspace") {
-      return <WorkspacePage />;
-    } else if (route.startsWith("workspace/")) {
-      const toolId = route.split("/")[1];
-      const tool = TOOLS.find(t => t.id === toolId);
-      if (tool) {
-        if (tool.id === "bulk-rename") return <BulkRenamerPage />;
-        if (tool.id === "smart-rename") return <RenamerPage />;
-        return <ToolWorkspacePage tool={tool} onNav={navigate} />;
-      }
-      return <div className="min-h-screen flex items-center justify-center pt-16 text-foreground">Tool not found</div>;
+    if (route === "features") return <FeaturesPage onNav={navigate} />;
+    if (route === "pricing") return <PricingPage onNav={navigate} />;
+    if (route === "blog") return <BlogPage onNav={navigate} />;
+    if (route.startsWith("blog/")) return <BlogPostPage postId={route.slice("blog/".length)} onNav={navigate} />;
+    if (isWorkspace) {
+      const tool = TOOLS.find(t => t.id === route.slice("workspace/".length));
+      if (!tool) return <div className="min-h-screen flex items-center justify-center pt-16 text-foreground">Tool not found</div>;
+      if (tool.id === "bulk-rename") return <BulkRenamerPage tool={tool} onNav={navigate} />;
+      return <ToolWorkspacePage tool={tool} onNav={navigate} />;
     }
-    
-    return <HomePage onSelect={(t) => navigate(`workspace/${t.id}` as any)} onNav={navigate} />;
+    return <HomePage onSelect={(t) => navigate(`workspace/${t.id}`)} onNav={navigate} />;
   };
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
+      <a href="#main" onClick={e => { e.preventDefault(); document.getElementById("main")?.focus(); }}
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:px-3 focus:py-2 focus:rounded-lg focus:bg-primary focus:text-primary-foreground">Skip to content</a>
       <Navbar route={route} onNavigate={navigate} isDark={isDark} toggleTheme={toggleTheme} />
-      <main className="flex-1 flex flex-col">
+      <main id="main" tabIndex={-1} className="flex-1 flex flex-col focus:outline-none">
         {renderPage()}
       </main>
-      <Footer onNavigate={navigate} />
+      {!isWorkspace && <Footer onNavigate={navigate} />}
       <Toaster position="bottom-right" theme={isDark ? "dark" : "light"} />
     </div>
   );

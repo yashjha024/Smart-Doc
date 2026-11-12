@@ -8,15 +8,16 @@ export function HeroMock() {
 
   useEffect(() => {
     let start = 0;
+    let pause: ReturnType<typeof setTimeout> | undefined;
     const tick = (ts: number) => {
       if (!start) start = ts;
       const p = Math.min(((ts - start) / 2800) * 100, 100);
       setPct(p);
       if (p < 100) { rafRef.current = requestAnimationFrame(tick); }
-      else { setTimeout(() => { start = 0; setPct(0); rafRef.current = requestAnimationFrame(tick); }, 1600); }
+      else { pause = setTimeout(() => { start = 0; setPct(0); rafRef.current = requestAnimationFrame(tick); }, 1600); }
     };
     rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
+    return () => { cancelAnimationFrame(rafRef.current); clearTimeout(pause); };
   }, []);
 
   const jobs = [

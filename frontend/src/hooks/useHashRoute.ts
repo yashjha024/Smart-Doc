@@ -1,38 +1,29 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AppRoute } from "../types/navigation";
 
-const routes = new Set<AppRoute>(["home", "features", "pricing", "blog", "workspace", "renamer", "history", "bulk-renamer"]);
+const routes = new Set<string>(["home", "features", "pricing", "blog"]);
+const prefixes = ["workspace/", "blog/"];
 
-function readRoute(): { route: AppRoute; docId?: number } {
+function readRoute(): AppRoute {
   const hash = window.location.hash.replace(/^#\/?/, "");
-  const [candidate, queryString] = hash.split("?");
-  const params = new URLSearchParams(queryString);
-  const docId = params.get("id") ? Number(params.get("id")) : undefined;
-  
-  let route = "home" as AppRoute;
-  if (candidate && candidate.startsWith("workspace/")) {
-      route = candidate as AppRoute;
-  } else if (routes.has(candidate as AppRoute)) {
-      route = candidate as AppRoute;
-  }
-  
-  return { route, docId };
+  const candidate = hash.split("?")[0];
+  if (routes.has(candidate) || prefixes.some(p => candidate.startsWith(p))) return candidate;
+  return "home";
 }
 
 export function useHashRoute() {
-  const [routeState, setRouteState] = useState(() => readRoute());
+  const [route, setRoute] = useState<AppRoute>(() => readRoute());
 
   useEffect(() => {
-    const handleHashChange = () => setRouteState(readRoute());
+    const handleHashChange = () => setRoute(readRoute());
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
-  const navigate = useCallback((nextRoute: AppRoute, docId?: number) => {
-    const hash = docId ? `/${nextRoute}?id=${docId}` : `/${nextRoute}`;
-    window.location.hash = hash;
-    setRouteState({ route: nextRoute, docId });
+  const navigate = useCallback((nextRoute: AppRoute) => {
+    window.location.hash = `/${nextRoute}`;
+    setRoute(nextRoute);
   }, []);
 
-  return { route: routeState.route, docId: routeState.docId, navigate };
+  return { route, navigate };
 }

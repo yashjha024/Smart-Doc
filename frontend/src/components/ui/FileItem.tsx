@@ -43,9 +43,9 @@ export function FileItem({ file, tool, onRemove, showResult, progress, onMoveUp,
     <motion.div layout initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, x: 8 }}
       className={`group flex items-center gap-3 px-4 py-3 border-b border-border/60 last:border-b-0 hover:bg-foreground/[0.02] transition-colors ${file.status === "error" ? "bg-destructive/4" : ""}`}>
       {showReorder && (
-        <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-          <button onClick={onMoveUp} className="p-0.5 text-muted-foreground hover:text-foreground"><ChevronUp size={10} /></button>
-          <button onClick={onMoveDown} className="p-0.5 text-muted-foreground hover:text-foreground"><ChevronDown size={10} /></button>
+        <div className="flex flex-col gap-0.5 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 transition-opacity flex-shrink-0">
+          <button onClick={onMoveUp} disabled={!onMoveUp} aria-label={`Move ${file.name} up`} className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"><ChevronUp size={12} /></button>
+          <button onClick={onMoveDown} disabled={!onMoveDown} aria-label={`Move ${file.name} down`} className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"><ChevronDown size={12} /></button>
         </div>
       )}
       <div className={`flex-shrink-0 h-8 px-2 rounded-md flex items-center text-[10px] font-bold tracking-wide border ${ta.bg} ${ta.border} ${ta.icon}`}>{ext.slice(0, 4)}</div>
@@ -70,7 +70,7 @@ export function FileItem({ file, tool, onRemove, showResult, progress, onMoveUp,
         )}
         {file.status === "error" && <AlertCircle size={14} className="text-destructive" />}
         {onRemove && file.status !== "processing" && (
-          <button onClick={() => onRemove(file.id)} className="w-6 h-6 rounded-md hover:bg-foreground/[0.07] flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"><X size={11} /></button>
+          <button onClick={() => onRemove(file.id)} aria-label={`Remove ${file.name}`} className="w-6 h-6 rounded-md hover:bg-foreground/[0.07] flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100"><X size={11} /></button>
         )}
       </div>
     </motion.div>

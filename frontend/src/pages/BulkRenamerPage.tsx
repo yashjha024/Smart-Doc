@@ -1,370 +1,249 @@
-import { CheckCircle2, Download, FileUp, Loader2, Wand2, XCircle } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { FileDropzone } from "../components/FileDropzone";
-import { PageHeader } from "../components/PageHeader";
-import { StatusMessage } from "../components/StatusMessage";
+import React, { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import { Upload, Lock, Wand2, Download, Home, ChevronRight, CheckCircle2, AlertCircle, ArrowRight, Info, ScanText } from "lucide-react";
+import { toast } from "sonner";
+import { ToolDef } from "../config/tools";
+import { ACCENTS, GRID_BG } from "../config/accents";
+import { Btn } from "../components/ui/Btn";
 import { api } from "../services/api";
-import type { BulkRenameItemResult, BulkRenameResult, DocumentRecord } from "../types/api";
+import type { BulkRenameItemResult, DocumentRecord } from "../types/api";
+import type { AppRoute } from "../types/navigation";
 import { formatBytes } from "../utils/format";
 
-const defaultTemplate = "{account_number}";
+const ACCEPT = ".pdf,.jpg,.jpeg,.png";
+const SESSION_KEY = "fc-bulk-rename-docs";
+// Must match the identifier labels in backend/app/services/identifier_service.py
+const PLACEHOLDERS = ["{account_number}", "{certificate_number}", "{invoice_number}", "{receipt_number}", "{membership_id}", "{registration_number}"];
+const inputClass = "w-full px-3.5 py-2.5 rounded-lg border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/60 transition-colors disabled:opacity-60";
 
-function statusClass(status: string): string {
-  if (status.includes("rename")) {
-    return "badge success";
-  }
-  if (status === "ocr_complete") {
-    return "badge info";
-  }
-  return "badge";
+/** Only show documents uploaded in this browser tab (the server lists everyone's). */
+function loadSessionIds(): number[] {
+  try { return JSON.parse(sessionStorage.getItem(SESSION_KEY) || "[]"); } catch { return []; }
+}
+function saveSessionIds(ids: number[]) {
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(ids)); } catch { /* storage blocked */ }
 }
 
-export function BulkRenamerPage() {
+export function BulkRenamerPage({ tool, onNav }: { tool: ToolDef; onNav: (p: AppRoute) => void }) {
+  const ta = ACCENTS[tool.accent];
+  const [sessionIds, setSessionIds] = useState<number[]>(loadSessionIds);
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [template, setTemplate] = useState(defaultTemplate);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [template, setTemplate] = useState("{account_number}");
   const [prefix, setPrefix] = useState("");
   const [suffix, setSuffix] = useState("");
-  const [isBusy, setIsBusy] = useState(false);
-  const [renameResults, setRenameResults] = useState<BulkRenameItemResult[] | null>(null);
-  const [message, setMessage] = useState<{ kind: "info" | "success" | "error"; text: string } | null>(null);
+  const [busy, setBusy] = useState<null | "upload" | "rename" | "download">(null);
+  const [results, setResults] = useState<Map<number, BulkRenameItemResult>>(new Map());
+  const [drag, setDrag] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const documentById = useMemo(
-    () => new Map(documents.map((document) => [document.id, document])),
-    [documents],
-  );
-
-  useEffect(() => {
-    void loadDocuments();
-  }, []);
-
-  const loadDocuments = async () => {
+  const refresh = async (ids = sessionIds) => {
+    if (ids.length === 0) { setDocuments([]); return; }
     try {
-      const docs = await api.listDocuments();
-      setDocuments(docs);
-    } catch (err) {
-      setMessage({
-        kind: "error",
-        text: err instanceof Error ? err.message : "Failed to load documents",
-      });
-    }
-  };
-
-  const toggleDocument = (id: number) => {
-    const nextSelected = new Set(selectedIds);
-    if (nextSelected.has(id)) {
-      nextSelected.delete(id);
-    } else {
-      nextSelected.add(id);
-    }
-    setSelectedIds(nextSelected);
-  };
-
-  const toggleAll = () => {
-    if (selectedIds.size === documents.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(documents.map((doc) => doc.id)));
-    }
-  };
-
-  const bulkUpload = async (files: File | File[]) => {
-    const fileArray = Array.isArray(files) ? files : [files];
-    if (fileArray.length === 0) {
-      setMessage({ kind: "error", text: "No files selected" });
-      return;
-    }
-
-    setIsBusy(true);
-    setRenameResults(null);
-    setMessage({ kind: "info", text: `Uploading ${fileArray.length} files...` });
-    let successful = 0;
-    let failed = 0;
-
-    for (const file of fileArray) {
-      try {
-        await api.uploadDocument(file);
-        successful++;
-      } catch {
-        failed++;
+      const all = await api.listDocuments();
+      const mine = all.filter(d => ids.includes(d.id));
+      setDocuments(mine);
+      // Drop ids the cleanup has already removed.
+      if (mine.length !== ids.length) {
+        const alive = mine.map(d => d.id);
+        setSessionIds(alive);
+        saveSessionIds(alive);
       }
-    }
-
-    setMessage({
-      kind: successful > 0 ? "success" : "error",
-      text: `Upload complete: ${successful} successful, ${failed} failed`,
-    });
-    await loadDocuments();
-    setIsBusy(false);
-  };
-
-  const summarizeRenameResult = (result: BulkRenameResult) => {
-    if (result.failed === 0) {
-      return `Bulk rename complete: ${result.successful} of ${result.total} documents renamed.`;
-    }
-    return `Bulk rename finished: ${result.successful} renamed, ${result.failed} failed. Review details below.`;
-  };
-
-  const bulkRename = async () => {
-    if (selectedIds.size === 0) {
-      setMessage({ kind: "error", text: "Please select at least one document" });
-      return;
-    }
-
-    if (!template.trim()) {
-      setMessage({ kind: "error", text: "Enter a naming template" });
-      return;
-    }
-
-    setIsBusy(true);
-    setRenameResults(null);
-    setMessage({
-      kind: "info",
-      text: `Renaming ${selectedIds.size} documents. OCR and identifier detection may take a minute...`,
-    });
-
-    try {
-      const result = await api.bulkRename(Array.from(selectedIds), template, prefix, suffix);
-      setRenameResults(result.results);
-      setMessage({
-        kind: result.failed === 0 ? "success" : result.successful > 0 ? "info" : "error",
-        text: summarizeRenameResult(result),
-      });
-      await loadDocuments();
     } catch (err) {
-      setMessage({
-        kind: "error",
-        text: err instanceof Error ? err.message : "Bulk rename failed",
-      });
-    } finally {
-      setIsBusy(false);
+      toast.error(err instanceof Error ? err.message : "Couldn't load your documents");
     }
   };
 
-  const bulkExport = async () => {
-    if (selectedIds.size === 0) {
-      setMessage({ kind: "error", text: "Please select at least one document" });
-      return;
-    }
+  useEffect(() => { void refresh(); }, []);
 
-    setIsBusy(true);
-    setMessage({ kind: "info", text: "Exporting selected documents..." });
+  const upload = async (files: File[]) => {
+    const ok = files.filter(f => ACCEPT.split(",").some(ext => f.name.toLowerCase().endsWith(ext)));
+    if (ok.length < files.length) toast.error(`${files.length - ok.length} file(s) skipped — use PDF, JPG or PNG`);
+    if (ok.length === 0) return;
+    setBusy("upload");
+    const added: number[] = [];
+    for (const file of ok) {
+      try { added.push((await api.uploadDocument(file)).id); }
+      catch { toast.error(`${file.name} failed to upload`); }
+    }
+    const ids = [...sessionIds, ...added];
+    setSessionIds(ids);
+    saveSessionIds(ids);
+    setSelected(prev => new Set([...prev, ...added]));
+    await refresh(ids);
+    setBusy(null);
+  };
+
+  const toggle = (id: number) => setSelected(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const allSelected = documents.length > 0 && selected.size === documents.length;
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(documents.map(d => d.id)));
+
+  const rename = async () => {
+    if (!template.trim()) { toast.error("Enter a naming template"); return; }
+    setBusy("rename");
     try {
-      const result = await api.bulkExport(Array.from(selectedIds), "default");
-      setMessage({
-        kind: "success",
-        text: `${result.message} Saved to ${result.export_path}`,
-      });
+      const res = await api.bulkRename(Array.from(selected), template, prefix, suffix);
+      setResults(prev => { const next = new Map(prev); res.results.forEach(r => next.set(r.document_id, r)); return next; });
+      if (res.failed === 0) toast.success(`${res.successful} file${res.successful !== 1 ? "s" : ""} renamed`);
+      else toast.error(`${res.successful} renamed, ${res.failed} failed — see the list for details`);
+      await refresh();
     } catch (err) {
-      setMessage({
-        kind: "error",
-        text: err instanceof Error ? err.message : "Bulk export failed",
-      });
+      toast.error(err instanceof Error ? err.message : "Bulk rename failed");
     } finally {
-      setIsBusy(false);
+      setBusy(null);
     }
   };
+
+  const download = async () => {
+    setBusy("download");
+    for (const doc of documents.filter(d => selected.has(d.id))) {
+      try { await api.saveDocument(doc.id, doc.stored_filename); }
+      catch { toast.error(`${doc.original_filename} is no longer available`); }
+    }
+    setBusy(null);
+  };
+
+  const ocrMissing = Array.from(results.values()).some(r => r.error?.includes("PaddleOCR is not installed"));
+  const example = `${prefix}${template || "{account_number}"}${suffix}.pdf`;
 
   return (
-    <>
-      <PageHeader
-        eyebrow="BATCH OPERATIONS"
-        title="Bulk Rename & Export"
-        description="Select multiple documents, detect identifiers from each file with OCR, and apply the same naming template."
-      />
+    <div className="flex-1 bg-background">
+      <div className="pointer-events-none fixed inset-0 opacity-60" style={GRID_BG} />
+      <input ref={inputRef} type="file" multiple accept={ACCEPT} className="hidden" onChange={e => { const f = Array.from(e.target.files || []); e.target.value = ""; if (f.length) void upload(f); }} />
+      <div className="relative pt-[64px]">
+        <div className="max-w-5xl mx-auto px-5 lg:px-8 pb-24">
+          <nav className="flex items-center gap-2 py-6 text-sm text-muted-foreground" aria-label="Breadcrumb">
+            <button onClick={() => onNav("home")} className="hover:text-foreground transition-colors flex items-center gap-1"><Home size={13} /> All tools</button>
+            <ChevronRight size={12} />
+            <span className={`font-medium ${ta.icon}`}>{tool.name}</span>
+          </nav>
 
-      {message ? <StatusMessage kind={message.kind}>{message.text}</StatusMessage> : null}
-
-      <div className="workspace-grid">
-        {/* LEFT COLUMN: Configuration */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-          <section className="panel" style={{ padding: '24px', marginBottom: '0' }}>
-            <div className="section-heading compact">
-              <h2>Bulk Upload</h2>
+          <div className="flex items-start gap-4 mb-8 pb-8 border-b border-border">
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center border flex-shrink-0 ${ta.bg} ${ta.border}`}><tool.Icon size={20} className={ta.icon} /></div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2.5 mb-1.5 flex-wrap">
+                <h1 className="text-2xl font-semibold text-foreground tracking-tight" style={{ fontFamily: "var(--font-display)" }}>{tool.name}</h1>
+                <span className={`text-[11px] px-2 py-0.5 rounded-full border font-semibold uppercase tracking-wider ${ta.bg} ${ta.border} ${ta.icon}`}>{tool.category}</span>
+              </div>
+              <p className="text-sm text-muted-foreground leading-relaxed max-w-xl">Upload documents, and we read each one to fill a naming template — for example <span className="font-mono text-foreground">{"{account_number}"}</span> — then rename them all at once.</p>
             </div>
-            <FileDropzone
-              accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-              disabled={isBusy}
-              helper="Drag multiple files"
-              label="Upload documents"
-              onFileSelected={bulkUpload}
-              multiple={true}
-            />
-          </section>
+          </div>
 
-          <section className="panel" style={{ padding: '24px', marginBottom: '0' }}>
-            <div className="section-heading compact">
-              <h2>Batch Settings</h2>
+          {ocrMissing && (
+            <div className="mb-6 flex items-start gap-3 p-4 rounded-xl border border-amber-500/25 bg-amber-500/[0.06]">
+              <AlertCircle size={16} className="text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <p className="font-semibold text-foreground">OCR isn't installed on the server</p>
+                <p className="text-muted-foreground mt-0.5">Text-based PDFs still work. For scans and photos, install it in the backend: <code className="font-mono text-foreground">pip install -r requirements-ocr.txt</code></p>
+              </div>
             </div>
+          )}
 
-            <p className="helper-text">
-              Each selected file is processed with OCR. Placeholders like <code>{"{account_number}"}</code> are filled from detected identifiers.
-            </p>
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+            {/* Left: upload + settings */}
+            <div className="lg:col-span-2 space-y-4">
+              <div role="button" tabIndex={0} aria-label="Choose documents to rename"
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); inputRef.current?.click(); } }}
+                onClick={() => inputRef.current?.click()}
+                onDragOver={e => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
+                onDrop={e => { e.preventDefault(); setDrag(false); const f = Array.from(e.dataTransfer.files); if (f.length) void upload(f); }}
+                className={`flex flex-col items-center justify-center gap-3 p-8 rounded-2xl border-2 border-dashed transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${drag ? "border-primary/60 bg-primary/[0.04]" : "border-border hover:border-foreground/[0.20] hover:bg-foreground/[0.015]"}`}>
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${drag ? `${ta.bg} ${ta.border}` : "bg-muted border-border"}`}><Upload size={20} className={drag ? ta.icon : "text-muted-foreground"} /></div>
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-foreground mb-0.5">{busy === "upload" ? "Uploading…" : drag ? "Release to upload" : "Drop documents here"}</p>
+                  <p className="text-xs text-muted-foreground">or click to browse</p>
+                </div>
+                <span className="text-xs text-muted-foreground px-2.5 py-1 rounded-full bg-muted" style={{ fontFamily: "var(--font-mono)" }}>{ACCEPT}</span>
+                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70"><Lock size={10} /> Deleted automatically after 1 hour</div>
+              </div>
 
-            <div className="form-grid" style={{ gridTemplateColumns: '1fr', gap: '12px', marginBottom: '24px' }}>
-              <label>
-                Template
-                <input
-                  value={template}
-                  placeholder="{account_number}"
-                  onChange={(event) => setTemplate(event.target.value)}
-                  disabled={isBusy}
-                />
-              </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <label>
-                  Prefix
-                  <input
-                    value={prefix}
-                    placeholder="Cert1_"
-                    onChange={(event) => setPrefix(event.target.value)}
-                    disabled={isBusy}
-                  />
-                </label>
-                <label>
-                  Suffix
-                  <input
-                    value={suffix}
-                    placeholder="_2015"
-                    onChange={(event) => setSuffix(event.target.value)}
-                    disabled={isBusy}
-                  />
-                </label>
+              <div className="p-5 rounded-xl border border-border bg-card space-y-4">
+                <div>
+                  <label htmlFor="br-template" className="text-sm font-semibold text-foreground block mb-1.5">Naming template</label>
+                  <p className="text-xs text-muted-foreground mb-2">Placeholders are filled from what we read in each document.</p>
+                  <input id="br-template" value={template} onChange={e => setTemplate(e.target.value)} disabled={!!busy} placeholder="{account_number}" className={inputClass} style={{ fontFamily: "var(--font-mono)" }} />
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {PLACEHOLDERS.map(p => (
+                      <button key={p} type="button" onClick={() => setTemplate(t => t + p)} disabled={!!busy} className="text-[11px] px-2 py-0.5 rounded-md border border-border bg-muted/50 text-muted-foreground hover:text-foreground hover:border-foreground/20 transition-colors" style={{ fontFamily: "var(--font-mono)" }}>{p}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="br-prefix" className="text-xs font-semibold text-foreground block mb-1.5">Prefix</label>
+                    <input id="br-prefix" value={prefix} onChange={e => setPrefix(e.target.value)} disabled={!!busy} placeholder="Cert1_" className={inputClass} style={{ fontFamily: "var(--font-mono)" }} />
+                  </div>
+                  <div>
+                    <label htmlFor="br-suffix" className="text-xs font-semibold text-foreground block mb-1.5">Suffix</label>
+                    <input id="br-suffix" value={suffix} onChange={e => setSuffix(e.target.value)} disabled={!!busy} placeholder="_2025" className={inputClass} style={{ fontFamily: "var(--font-mono)" }} />
+                  </div>
+                </div>
+                <div className="rounded-lg bg-muted/40 border border-border px-3.5 py-2.5">
+                  <p className="text-[11px] text-muted-foreground mb-0.5" style={{ fontFamily: "var(--font-mono)" }}>Example output</p>
+                  <p className="text-sm font-medium text-teal-600 dark:text-teal-400 truncate" style={{ fontFamily: "var(--font-mono)" }}>{example}</p>
+                </div>
               </div>
             </div>
 
-            <div className="preview-box compact" style={{ padding: '16px' }}>
-              <span>Example output</span>
-              <strong style={{ fontSize: '1.2rem', marginTop: '4px' }}>
-                {prefix}
-                {template || "{account_number}"}
-                {suffix}
-                .pdf
-              </strong>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <button
-                className="button primary full"
-                style={{ marginTop: '0' }}
-                disabled={isBusy || selectedIds.size === 0}
-                type="button"
-                onClick={bulkRename}
-              >
-                {isBusy ? <Loader2 aria-hidden="true" className="spin" size={16} /> : <Wand2 aria-hidden="true" size={16} />}
-                {isBusy ? "Processing Queue..." : "Bulk Rename Selected"}
-              </button>
-              <button
-                className="button secondary full"
-                style={{ marginTop: '0' }}
-                disabled={isBusy || selectedIds.size === 0}
-                type="button"
-                onClick={bulkExport}
-              >
-                <Download aria-hidden="true" size={16} />
-                Bulk Export Selected
-              </button>
-            </div>
-          </section>
-        </div>
-
-        {/* RIGHT COLUMN: Batch Queue & Results */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-          
-          <section className="panel" style={{ padding: '24px', marginBottom: '0' }}>
-            <div className="section-heading compact" style={{ marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <h2 style={{ margin: 0 }}>Batch Queue</h2>
-                <span className="badge neutral">{selectedIds.size} selected</span>
-              </div>
-              <button className="button secondary" style={{ height: '32px', fontSize: '0.8rem', padding: '0 12px' }} type="button" onClick={toggleAll} disabled={isBusy || documents.length === 0}>
-                {selectedIds.size === documents.length ? "Deselect All" : "Select All"}
-              </button>
-            </div>
-
-            <div className="bulk-document-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px' }}>
-              {documents.map((doc) => {
-                const isSelected = selectedIds.has(doc.id);
-                const wasRenamed = doc.stored_filename !== doc.original_filename || doc.status.includes("rename");
-
-                return (
-                  <button
-                    key={doc.id}
-                    className={isSelected ? "bulk-document-card selected" : "bulk-document-card"}
-                    style={{ padding: '16px' }}
-                    type="button"
-                    disabled={isBusy}
-                    onClick={() => toggleDocument(doc.id)}
-                  >
-                    <div className="bulk-document-card-header">
-                      <strong style={{ fontSize: '0.9rem' }}>{doc.original_filename}</strong>
-                    </div>
-                    {wasRenamed ? (
-                      <div className="bulk-document-meta" style={{ marginTop: '8px' }}>
-                        <span>Renamed to</span>
-                        <code style={{ fontSize: '0.75rem' }}>{doc.stored_filename}</code>
-                      </div>
-                    ) : null}
-                    <div className="bulk-document-meta" style={{ marginTop: 'auto', paddingTop: '8px', borderTop: '1px solid var(--color-border)' }}>
-                      <span className={statusClass(doc.status)}>{doc.status.replace("_", " ")}</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {documents.length === 0 ? (
-              <div className="empty-state">No documents in queue. Upload some documents first.</div>
-            ) : null}
-          </section>
-
-          {renameResults ? (
-            <section className="panel" style={{ padding: '24px', marginBottom: '0' }}>
-              <div className="section-heading compact">
-                <h2>Batch Results</h2>
-                <span>
-                  {renameResults.filter((item) => item.status === "success").length} succeeded
-                </span>
+            {/* Right: queue */}
+            <div className="lg:col-span-3 space-y-4">
+              <div className="rounded-xl border border-border overflow-hidden bg-card">
+                <div className="px-4 py-2.5 border-b border-border flex items-center justify-between bg-muted/30">
+                  <span className="text-xs font-medium text-muted-foreground" style={{ fontFamily: "var(--font-mono)" }}>{documents.length} document{documents.length !== 1 ? "s" : ""} · {selected.size} selected</span>
+                  {documents.length > 0 && <button onClick={toggleAll} disabled={!!busy} className="text-xs text-muted-foreground hover:text-foreground transition-colors">{allSelected ? "Deselect all" : "Select all"}</button>}
+                </div>
+                {documents.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center gap-3 py-14 text-center px-6">
+                    <ScanText size={24} className="text-muted-foreground opacity-30" />
+                    <p className="text-sm text-muted-foreground">No documents yet. Upload some to get started.</p>
+                  </div>
+                ) : (
+                  <ul>
+                    <AnimatePresence>
+                      {documents.map(doc => {
+                        const r = results.get(doc.id);
+                        const renamed = doc.stored_filename !== doc.original_filename && doc.status.includes("rename");
+                        return (
+                          <motion.li key={doc.id} layout initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="border-b border-border/50 last:border-b-0">
+                            <label className="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-foreground/[0.02] transition-colors">
+                              <input type="checkbox" checked={selected.has(doc.id)} onChange={() => toggle(doc.id)} disabled={!!busy} className="mt-1 accent-primary" />
+                              <div className="flex-1 min-w-0">
+                                <p className={`text-sm font-medium truncate ${renamed ? "text-muted-foreground line-through text-xs" : "text-foreground"}`}>{doc.original_filename}</p>
+                                {renamed && (
+                                  <p className="text-xs font-medium text-teal-600 dark:text-teal-400 truncate mt-0.5 flex items-center gap-1" style={{ fontFamily: "var(--font-mono)" }}><ArrowRight size={10} className="flex-shrink-0" /> {doc.stored_filename}</p>
+                                )}
+                                <p className="text-[11px] text-muted-foreground mt-0.5" style={{ fontFamily: "var(--font-mono)" }}>{formatBytes(doc.file_size_bytes)}</p>
+                                {r?.status === "failed" && r.error && <p className="text-xs text-destructive mt-1">{r.error}</p>}
+                              </div>
+                              {r?.status === "success" || renamed ? <CheckCircle2 size={14} className="text-teal-600 dark:text-teal-400 mt-1 flex-shrink-0" />
+                                : r?.status === "failed" ? <AlertCircle size={14} className="text-destructive mt-1 flex-shrink-0" /> : null}
+                            </label>
+                          </motion.li>
+                        );
+                      })}
+                    </AnimatePresence>
+                  </ul>
+                )}
               </div>
 
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Status</th>
-                      <th>Original</th>
-                      <th>New filename</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {renameResults.map((item) => {
-                      const document = documentById.get(item.document_id);
-                      const originalName = item.original_filename ?? document?.original_filename ?? `Doc #${item.document_id}`;
-                      return (
-                        <tr key={item.document_id}>
-                          <td>
-                            {item.status === "success" ? (
-                              <span className="result-pill success">
-                                <CheckCircle2 aria-hidden="true" size={14} />
-                              </span>
-                            ) : (
-                              <span className="result-pill error">
-                                <XCircle aria-hidden="true" size={14} />
-                              </span>
-                            )}
-                          </td>
-                          <td className="truncate-cell">{originalName}</td>
-                          <td className="truncate-cell">{item.filename ?? "—"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              {busy === "rename" && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
+                  <Info size={12} /> Reading documents and renaming — this can take a minute for scans.
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                <Btn v="secondary" disabled={!!busy || selected.size === 0} onClick={download}><Download size={14} /> {busy === "download" ? "Downloading…" : "Download selected"}</Btn>
+                <Btn v="primary" disabled={!!busy || selected.size === 0} onClick={rename}><Wand2 size={14} /> {busy === "rename" ? "Renaming…" : `Rename ${selected.size || ""} selected`.replace("  ", " ")}</Btn>
               </div>
-            </section>
-          ) : null}
+            </div>
+          </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

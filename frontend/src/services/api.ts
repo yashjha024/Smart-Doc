@@ -132,10 +132,18 @@ export const api = {
   downloadFile: (fileId: string) => `${API_BASE_URL}/files/${encodeURIComponent(fileId)}/download`,
 
   /** Fetches a processed file and saves it with the server-provided name. Throws a readable error on 404/410. */
-  saveFile: async (fileId: string, fallbackName: string) => {
-    const response = await fetch(`${API_BASE_URL}/files/${encodeURIComponent(fileId)}/download`);
+  saveFile: (fileId: string, fallbackName: string) =>
+    saveFromPath(`/files/${encodeURIComponent(fileId)}/download`, fallbackName),
+
+  /** Downloads a (renamed) bulk-rename document under its current name. */
+  saveDocument: (documentId: number, fallbackName: string) =>
+    saveFromPath(`/export/download/${documentId}`, fallbackName),
+};
+
+async function saveFromPath(path: string, fallbackName: string) {
+    const response = await fetch(`${API_BASE_URL}${path}`);
     if (!response.ok) {
-      if (response.status === 410) throw new Error("This file has expired. Please process it again.");
+      if (response.status === 410 || response.status === 404) throw new ExpiredFileError();
       throw new Error(await readError(response));
     }
     const blob = await response.blob();
@@ -148,8 +156,12 @@ export const api = {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  },
-};
+}
+
+/** Thrown when a processed file has been deleted by the 60-minute cleanup. */
+export class ExpiredFileError extends Error {
+  constructor() { super("This file has expired. Please process it again."); this.name = "ExpiredFileError"; }
+}
 
 function filenameFromDisposition(header: string | null): string | null {
   if (!header) return null;

@@ -18,7 +18,8 @@ type FilterCat = "all" | "pdf" | "image" | "file";
 export function HomePage({ onSelect, onNav }: { onSelect: (t: ToolDef) => void; onNav: (p: AppRoute) => void }) {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<FilterCat>("all");
-  const filt = TOOLS.filter(t => (!q || t.name.toLowerCase().includes(q.toLowerCase()) || t.description.toLowerCase().includes(q.toLowerCase())) && (cat === "all" || t.category === cat));
+  const scrollToTools = () => document.getElementById("tools")?.scrollIntoView({ behavior: "smooth" });
+  const filt =TOOLS.filter(t => (!q || t.name.toLowerCase().includes(q.toLowerCase()) || t.description.toLowerCase().includes(q.toLowerCase())) && (cat === "all" || t.category === cat));
   const pdf = filt.filter(t => t.category === "pdf");
   const img = filt.filter(t => t.category === "image");
   const fil = filt.filter(t => t.category === "file");
@@ -36,7 +37,7 @@ export function HomePage({ onSelect, onNav }: { onSelect: (t: ToolDef) => void; 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center">
             <div>
               <div className="inline-flex items-center gap-2 mb-5 px-3 py-1.5 rounded-full border border-primary/30 bg-primary/[0.07] text-primary text-xs font-medium">
-                <Sparkles size={11} /> {TOOLS.length} tools · No account needed · Files deleted after 1 hour
+                <Sparkles size={11} /> {TOOLS.filter(t => t.status !== "coming-soon").length} tools ready · No account needed · Files deleted after 1 hour
               </div>
               <h1 className="mb-5 text-foreground leading-[1.08] tracking-[-0.02em]" style={{ fontFamily: "var(--font-display)", fontSize: "clamp(2.6rem, 5.5vw, 4.5rem)", fontWeight: 600 }}>
                 Every file tool<br />you'll <em className="not-italic text-primary" style={{ fontStyle: "italic" }}>ever</em> need.
@@ -45,7 +46,7 @@ export function HomePage({ onSelect, onNav }: { onSelect: (t: ToolDef) => void; 
                 Convert, compress, rename, and edit PDF and image files online. Works in any browser, no software to install.
               </p>
               <div className="flex flex-wrap gap-3">
-                <Btn v="primary" sz="lg">Start for free <ArrowRight size={16} /></Btn>
+                <Btn v="primary" sz="lg" onClick={scrollToTools}>Start for free <ArrowRight size={16} /></Btn>
                 <Btn v="secondary" sz="lg" onClick={() => onNav("features")}>See how it works</Btn>
               </div>
             </div>
@@ -70,7 +71,7 @@ export function HomePage({ onSelect, onNav }: { onSelect: (t: ToolDef) => void; 
       )}
 
       {/* ── Tool browser ── */}
-      <section className="px-5 lg:px-8 pb-24">
+      <section id="tools" className="px-5 lg:px-8 pb-24 scroll-mt-20">
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-6 pb-5 border-b border-border">
             <div className="relative flex-1 max-w-xs">
@@ -143,7 +144,7 @@ export function HomePage({ onSelect, onNav }: { onSelect: (t: ToolDef) => void; 
           <h2 className="text-2xl sm:text-3xl font-semibold text-foreground mb-3 tracking-tight" style={{ fontFamily: "var(--font-display)" }}>Start with any file, right now.</h2>
           <p className="text-muted-foreground mb-7">No sign-up. No credit card. Free to use.</p>
           <div className="flex flex-wrap justify-center gap-3">
-            <Btn v="primary" sz="lg">Start for free <ArrowRight size={16} /></Btn>
+            <Btn v="primary" sz="lg" onClick={scrollToTools}>Start for free <ArrowRight size={16} /></Btn>
             <Btn v="secondary" sz="lg" onClick={() => onNav("pricing")}>Compare plans</Btn>
           </div>
         </div>
